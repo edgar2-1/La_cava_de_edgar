@@ -4,7 +4,7 @@ author: "Edgardo L. Rosado Ramos"
 date: "2025-09-04"
 output: html_document
 ---
-This document will assist in making PCoA plots, NMDS plots, heatmaps and alpha beta diversity plots using PhyloSeq and other R packages.
+This document will assist in making PCoA plots, NMDS plots, heatmaps and alpha beta diversity plots using PhyloSeq and other R packages. Adapted from Huffmyer et al. 2024.
 
 
 ```{r setup, include=FALSE}
@@ -906,4 +906,3 @@ Plot data at the level of phylum in the rarefied dataset. Bacteria_unclassified 
 plot_bar(physeq1_rare, fill="Phylum", facet_grid=~Phylum)
 ```
 
-We have some unclassified bacteria, but a higher proportion of proteobacteria and bacteriodes.  

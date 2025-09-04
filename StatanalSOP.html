@@ -358,7 +358,8 @@ display: none;
 
 
 <p>This document will assist in making PCoA plots, NMDS plots, heatmaps
-and alpha beta diversity plots using PhyloSeq and other R packages.</p>
+and alpha beta diversity plots using PhyloSeq and other R packages.
+Adapted from Huffmyer et al. 2024.</p>
 <div id="if-not-already-installed" class="section level1">
 <h1>if not already installed</h1>
 <pre class="r"><code>BiocManager::install(&quot;ComplexHeatmap&quot;)
@@ -1122,8 +1123,6 @@ Environment 7 342128 48875 7.706 0.000294 *** Residuals 17 107827
 <p>Plot data at the level of phylum in the rarefied dataset.
 Bacteria_unclassified are our unknowns.</p>
 <pre class="r"><code>plot_bar(physeq1_rare, fill=&quot;Phylum&quot;, facet_grid=~Phylum)</code></pre>
-<p>We have some unclassified bacteria, but a higher proportion of
-proteobacteria and bacteriodes.</p>
 </div>
 
 
