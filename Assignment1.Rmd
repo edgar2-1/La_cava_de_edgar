@@ -10,6 +10,7 @@ output: html_document
 - This assignment consists of 10 questions, each worth **10 points**.  
 (Esta tarea consta de 10 preguntas, cada una vale **10 puntos**.)
 
+
 - Write your answers in R code chunks whenever applicable.  
 (Escribe tus respuestas en chunks de R cuando sea aplicable.)
 
