@@ -1,0 +1,908 @@
+---
+title: "StatanalSOP"
+author: "Edgardo L. Rosado Ramos"
+date: "2025-09-04"
+output: html_document
+---
+This document will assist in making PCoA plots, NMDS plots, heatmaps and alpha beta diversity plots using PhyloSeq and other R packages. Adapted from Huffmyer et al. 2024.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+  
+# if not already installed
+```{r}
+BiocManager::install("ComplexHeatmap")
+packageVersion("ComplexHeatmap")
+```
+
+## install packages if you dont already have them in your library
+
+```{r, warning=FALSE, message=FALSE}
+
+if ("tidyverse" %in% rownames(installed.packages()) == 'FALSE') install.packages('tidyverse') 
+if ("ggplot2" %in% rownames(installed.packages()) == 'FALSE') install.packages('ggplot2') 
+if ("cowplot" %in% rownames(installed.packages()) == 'FALSE') install.packages('cowplot') 
+if ("janitor" %in% rownames(installed.packages()) == 'FALSE') install.packages('janitor') 
+if ("car" %in% rownames(installed.packages()) == 'FALSE') install.packages('car') 
+if ("phyloseq" %in% rownames(installed.packages()) == 'FALSE') BiocManager::install('phyloseq') 
+if ("stringr" %in% rownames(installed.packages()) == 'FALSE') BiocManager::install('stringr')
+if ("ape" %in% rownames(installed.packages()) == 'FALSE') BiocManager::install('ape') 
+if ("DESeq2" %in% rownames(installed.packages()) == 'FALSE') BiocManager::install('DESeq2') 
+if ("microViz" %in% rownames(installed.packages()) == 'FALSE') devtools::install_github("david-barnett/microViz@0.9.0") 
+if ("vegan" %in% rownames(installed.packages()) == 'FALSE') install.packages('vegan') 
+if ("circlize" %in% rownames(installed.packages()) == 'FALSE') install.packages('circlize')
+if ("BiocManager" %in% rownames(installed.packages()) == 'FALSE') install.packages('BiocManager')
+if("dplyr" %in% rownames(installed.packages()) == 'FALSE') install.packages('dplyr')
+# if not already installed
+BiocManager::install("GO.db")
+BiocManager::install("ComplexHeatmap")
+BiocManager::install("impute")
+BiocManager::install("WGCNA")
+BiocManager::install("preprocessCore")
+packageVersion("ComplexHeatmap")
+
+```
+
+#load packages
+
+```{r, warning=FALSE, message=FALSE}
+
+library("ggplot2")
+library('cowplot')
+library("tidyverse")
+library("janitor")
+library("car")
+library("phyloseq")
+library("stringr")
+library("ape")
+library("DESeq2")
+library("microViz")
+library("vegan")
+library("dendsort")
+library(WGCNA)
+library("circlize")
+library("ComplexHeatmap")
+library("dplyr")
+```
+
+# **Load data**  
+
+Load data for use in analysis with PhyloSeq. Here you need to import an OTU table and a taxonomy table.  
+
+We will load "rare" files as those that were subsampled/rarefied.  
+
+```{r}
+otu.rare<-read.table("final.opti_mcc.0.03.subsample.shared", sep='\t', header=TRUE)
+
+taxonomy<-read.table("final.opti_mcc.0.03.cons.taxonomy", sep='\t', header=TRUE)
+
+rarefaction<-read.table("final.opti_mcc.0.03.subsample.shared", sep='\t', header=TRUE)
+```
+
+# Load sample information.  
+# Read the design file
+```{r}
+
+
+metadata <- read.table(
+  "1121cleandirty.design",
+  header = TRUE,
+  sep = "",             # treat any whitespace as a separator
+  stringsAsFactors = FALSE
+)
+
+colnames(metadata)
+
+# Set row names to the sample IDs in the 'Group' column
+rownames(metadata) <- metadata$Group
+
+metadata <- metadata %>%
+  select(-Group) %>%
+  mutate(Environment = if_else(Environment == "Muck", "Sterile", Environment))
+
+
+```{r}
+theme_set(theme_bw())
+```
+
+Format columns of our taxonomy file. We need to separate by ; and remove the quotes. We also need to remove the confidence values.  
+```{r}
+head(taxonomy)
+
+taxonomy<-taxonomy%>%
+  mutate(Taxonomy=str_replace_all(string=Taxonomy, pattern="\\(\\d*\\)", replacement="")) %>% #remove parentheses with numbers
+  mutate(Taxonomy=str_replace_all(string=Taxonomy, pattern=";$", replacement="")) %>% #remove semicolons
+  mutate(Taxonomy=str_replace_all(string=Taxonomy, pattern="*", replacement="")) %>% #remove quotes
+  mutate(Taxonomy=str_replace_all(string=Taxonomy, pattern="""$", replacement="")) %>% #remove quotes
+  separate(Taxonomy, into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus"), sep=";") #separate columns
+
+head(taxonomy)
+
+rownames(taxonomy)<-taxonomy$OTU
+taxonomy<-as.matrix(taxonomy)
+
+```
+
+# **Heatmaps and beta diversity**   
+
+## Prepare data  
+
+##Prepare the matrix to be all numeric with taxa in rows.  
+```{r}
+otu.rare<-otu.rare%>%
+  select(!label)%>%
+  select(!numOtus)
+
+rownames(otu.rare)<-otu.rare$Environment
+
+otu.rare<-otu.rare%>%
+  select(!Environment)
+
+otu.rare<-t(otu.rare)
+```
+
+# Combine the OTU and taxonomic information.  
+```{r}
+OTU_rare = otu_table(otu.rare, taxa_are_rows = TRUE)
+TAX = tax_table(taxonomy)
+OTU_rare
+```
+
+# Load into phyloseq.  
+```{r}
+physeq_rare = phyloseq(OTU_rare, TAX)
+physeq_rare
+```
+
+# Plot an abundance table at the different taxonomic levels.     
+```{r}
+plot_bar(physeq_rare, fill = "Domain")+theme(legend.position="bottom")
+plot_bar(physeq_rare, fill = "Phylum")+theme(legend.position="bottom")
+plot_bar(physeq_rare, fill = "Class")+theme(legend.position="bottom")
+plot_bar(physeq_rare, fill = "Order")+theme(legend.position="bottom")
+plot_bar(physeq_rare, fill = "Family")+theme(legend.position="bottom")
+plot_bar(physeq_rare, fill = "Genus")+theme(legend.position="bottom")
+
+```
+
+# Plot a tree of OTUs.  
+```{r}
+random_tree_rare = rtree(ntaxa(physeq_rare), rooted=TRUE, tip.label=taxa_names(physeq_rare))
+plot(random_tree_rare)
+```
+
+# Add metdata, this changes mutate vairables and "" characters
+```{r}
+keep_samples <- sample_names(physeq_rare)
+
+metadata_rare <- metadata_rare %>%
+  filter(Group %in% keep_samples) %>%
+  mutate(Environment = if_else(Environment == "Sterile", "Muck", Environment))
+
+# Set row names to Group and drop the column
+rownames(metadata_rare) <- metadata_rare$Group
+metadata_rare <- select(metadata_rare, -Group)
+# Set row names to Group and drop the column
+rownames(metadata_rare) <- metadata_rare$Group
+metadata_rare <- select(metadata_rare, -Group)
+
+# Add sample data 
+```{r}
+sampledata = sample_data(data.frame(
+  Environment = metadata_rare$Environment,
+  Environment = metadata_rare$Environment, 
+  hpf = metadata_rare$hpf,
+  row.names=sample_names(physeq_rare),
+  stringsAsFactors=FALSE
+))
+sampledata
+```
+
+# Merge the tree, sample information, and OTU table.  
+```{r}
+physeq1_rare = merge_phyloseq(physeq_rare, sampledata, random_tree_rare)
+physeq1_rare
+```
+
+# Now rebuild phyloseq.  
+```{r}
+physeq2_rare = phyloseq(OTU_rare, TAX, sampledata, random_tree_rare)
+physeq2_rare
+```
+
+# Check that they are identical. Should return TRUE.  
+```{r}
+identical(physeq1_rare, physeq2_rare)
+```
+```{r}
+
+# Extract sample_data as a plain data frame
+meta_df <- as(sample_data(physeq1_rare), "data.frame")
+
+# Force Environment to be a plain character vector
+meta_df <- meta_df %>%
+  mutate(Environment = as.character(Environment))
+
+# Identify low-count environments
+low_envs <- meta_df %>%
+  group_by(Environment) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  filter(n < 3) %>%
+  pull(Environment)
+
+# Filter them out from the phyloseq object
+physeq1_rare <- ps_filter(physeq1_rare, !Environment %in% low_envs)
+
+plot_tree(physeq1_rare, color="Environment", label.tips="taxa_names", ladderize="left", plot.margin=0.3)
+```
+
+Plot relative abundance now with Environment information.  
+
+```{r}
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+
+# Define ranks and desired heights for saving
+plot_specs <- data.frame(
+  rank = c("Class", "Phylum", "Order", "Family", "Genus"),
+  height = c(6, 6, 9, 12, 25),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each rank
+plots <- lapply(seq_len(nrow(plot_specs)), function(i) {
+  r <- plot_specs$rank[i]
+  h <- plot_specs$height[i]
+  
+  p <- plot_bar(physeq1_rare, fill = r) +
+    theme(legend.position = "bottom") +
+    facet_grid(~Environment, scales = "free_x")
+  
+  # Save the plot
+  ggsave(
+    filename = paste0("filename/Figures/16S/relabund_", tolower(r), "_rare.png"),
+    plot = p,
+    height = h,
+    width = 18
+  )
+  
+  p
+})
+
+# Name the list elements for easy access
+names(plots) <- plot_specs$rank
+
+# Example: show the Genus plot
+plots$Genus
+
+```
+
+Plot relative abundance at the phylum level.  
+```{r}
+dat <- physeq1_rare %>% tax_glom(taxrank = "Phylum") %>% psmelt()
+head(dat)
+```
+
+```{r}
+df <- dat %>% 
+  group_by(Environment, Phylum) %>% 
+  summarise(TotalAbundance = sum(Abundance), .groups = "drop_last") %>%  # total abundance per phylum in each environment
+  group_by(Environment) %>%
+  mutate(PercRelAbundance = TotalAbundance / sum(TotalAbundance) * 100) %>%  # relative abundance
+  ungroup() %>%
+  select(-TotalAbundance)
+
+# Clean up Phylum names by removing non-alphanumeric characters
+df$Phylum <- gsub('[^[:alnum:] ]', '', df$Phylum)
+
+
+#change to a matrix with phylum in rows and Environment in columns
+df<-df%>%
+  spread(key=Phylum, value=PercRelAbundance)
+
+#replace na with 0, since 0 abundance was calculated as na in step above b/c dividing by 0
+df[is.na(df)] <- 0
+
+rownames(df)<-df$Environment
+Environment_list<-df$Environment
+
+dim(df)
+
+df<-as.matrix(df)
+
+df<-df[,-1]
+
+taxa_list<-colnames(df)
+
+df_mat <- matrix(as.numeric(df),    # Convert to numeric matrix
+                  ncol = ncol(df))                                   # Print numeric matrix
+
+colnames(df_mat)<-taxa_list
+rownames(df_mat)<-Environment_list
+
+df_mat<-t(df_mat)
+```
+
+Plot heatmap of phylum relative abundance.  
+```{r}
+
+library(ComplexHeatmap)
+library(circlize)
+library(dendsort)
+library(grid)  # for gpar()
+
+# 1. Set your environment order exactly as they appear in your metadata
+Environment_order <- c(
+  "Sterile",
+  "Muck"
+  # Add more if you have them, in the order you want them in the heatmap
+)
+
+# 2. Create dendrograms for rows and columns
+row_dend <- dendsort(hclust(dist(df_mat)))
+col_dend <- dendsort(hclust(dist(t(df_mat))))
+
+# 3. Define your color function
+# Example: 0% = blue, 50% = white, 100% = red
+col_fun <- colorRamp2(c(0, 25, 50, 75, 100), c("blue", "white", "orange", "white", "red"))
+
+# 4. Save heatmap to PDF
+pdf(file = "filename/Figures/16S/16S-Phylum-Heatmap-YOURS.pdf", height = 8, width = 8)
+
+ComplexHeatmap::Heatmap(
+  df_mat,
+  name = "Rel. Abun. (%)",
+  row_title = "",
+  column_title = "16S Relative Abundance (Phylum)",
+  col = col_fun,
+  row_names_side = "left",
+  row_dend_side = "right",
+  width = unit(4, "in"),
+  height = unit(4, "in"),
+  column_dend_height = unit(.5, "in"),
+  row_dend_width = unit(.5, "in"),
+  column_dend_reorder = FALSE,
+  row_dend_reorder = TRUE,
+  row_gap = unit(2.5, "mm"),
+  clustering_distance_rows = "euclidean",
+  clustering_method_rows = "complete",
+  border = TRUE,
+  column_names_gp = gpar(fontsize = 12),
+  column_names_rot = 35,
+  cluster_rows = row_dend,
+  # cluster_columns = col_dend, # uncomment if you want column clustering
+  column_order = Environment_order,
+  row_names_gp = gpar(fontsize = 12, alpha = 0.75)
+)
+
+dev.off()
+
+
+```
+
+Display as % abundance.    
+
+```{r}
+physeq1_rare_f = transform_sample_counts(physeq1_rare, function(x) 100 * x/sum(x))
+```
+
+
+Plot relative abundance at the family level.  
+```{r}
+dat_fam <- physeq1_rare %>% tax_glom(taxrank = "Family") %>% psmelt()
+head(dat_fam)
+```
+
+```{r}
+df_fam <- dat_fam %>% 
+  group_by(Environment, Family) %>% 
+  summarise(TotalAbundance = sum(Abundance), .groups = "drop_last") %>%  # total abundance per family in each environment
+  group_by(Environment) %>%
+  mutate(PercRelAbundance = TotalAbundance / sum(TotalAbundance) * 100) %>%  # relative abundance
+  ungroup() %>%
+  select(-TotalAbundance) %>%
+  filter(PercRelAbundance > 5)
+
+# Clean up Family names by removing non-alphanumeric characters
+df_fam$Family <- gsub('[^[:alnum:] ]', '', df_fam$Family)
+
+#change to a matrix with phylum in rows and Environment in columns
+df_fam<-df_fam%>%
+  spread(key=Family, value=PercRelAbundance)
+
+#replace na with 0, since 0 abundance was calculated as na in step above b/c dividing by 0
+df_fam[is.na(df_fam)] <- 0
+
+rownames(df_fam)<-df_fam$Environment
+Environment_list<-df_fam$Environment
+
+dim(df_fam)
+
+df_fam<-as.matrix(df_fam)
+
+df_fam<-df_fam[,-1]
+
+taxa_list<-colnames(df_fam)
+
+df_mat_fam <- matrix(as.numeric(df_fam),    # Convert to numeric matrix
+                  ncol = ncol(df_fam))                                   # Print numeric matrix
+
+colnames(df_mat_fam)<-taxa_list
+rownames(df_mat_fam)<-Environment_list
+
+df_mat_fam<-t(df_mat_fam)
+```
+
+Plot heatmap of family relative abundance.  
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+library(dendsort)
+library(grid)
+
+# Dendrograms
+row_dend <- dendsort(hclust(dist(df_mat_fam)))
+col_dend <- dendsort(hclust(dist(t(df_mat_fam))))
+
+# Colour function
+col_fun <- colorRamp2(c(0, 25, 50), c("blue", "white", "red"))
+
+# Save to PDF
+pdf(file = "filename/Figures/16S/16S-Family-Heatmap.pdf", height = 10, width = 10)
+
+ComplexHeatmap::Heatmap(
+  df_mat_fam,
+  name = "Rel. Abun. (%)",
+  row_title = "",
+  column_title = "16S Relative Abundance (Family)",
+  col = col_fun,
+  row_names_side = "left",
+  row_dend_side = "right",
+  width = unit(5, "in"),
+  height = unit(5, "in"),
+  column_dend_height = unit(.5, "in"),
+  row_dend_width = unit(.5, "in"),
+  column_dend_reorder = FALSE,
+  row_dend_reorder = TRUE,
+  row_gap = unit(2.5, "mm"),
+  clustering_distance_rows = "euclidean",
+  clustering_method_rows = "complete",
+  border = TRUE,
+  column_names_gp = gpar(fontsize = 12),
+  column_names_rot = 35,
+  cluster_rows = row_dend,
+  # cluster_columns = col_dend, # enable if you want column clustering
+  column_order = Environment_order,
+  row_names_gp = gpar(fontsize = 12, alpha = 0.75)
+)
+
+dev.off()
+
+
+```
+
+
+## Plot PCoA and conduct PERMANOVA  
+
+Prepare PCoA ordination.  
+```{r}
+library(phyloseq)
+library(ggplot2)
+
+# 1. Set your Environment order in metadata
+metadata_rare$Environment <- factor(
+  metadata_rare$Environment,
+  levels = c("Sterile", "Muck")  # change/add levels as needed
+)
+
+# 2. Define your custom colours
+env_cols <- c(
+  "Sterile" = "#1f78b4",  # blue
+  "Muck"    = "#33a02c"   # green
+)
+
+# 3. Run PCoA ordination (Bray-Curtis)
+ps.ordb <- ordinate(physeq1_rare, method = "PCoA", distance = "bray")
+
+# 4. Plot ordination with custom colours and legend at bottom
+p2b <- plot_ordination(physeq1_rare, ps.ordb, type = "samples", color = "Environment") +
+  scale_color_manual(values = env_cols) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# 5. Display plot
+p2b
+
+```
+
+Output PCoA plot for visualization.  
+```{r}
+library(ggplot2)
+
+# Define your environment order
+metadata_rare$Environment <- factor(
+  metadata_rare$Environment,
+  levels = c("Sterile", "Muck") # adjust if you have more
+)
+
+# Define custom colours for each environment
+env_cols <- c(
+  "Sterile" = "#1f78b4",  # blue
+  "Muck"    = "#33a02c"   # green
+)
+
+# Define custom shapes for each environment
+env_shapes <- c(
+  "Sterile" = 16,  # filled circle
+  "Muck"    = 17   # filled triangle
+)
+
+# Build the plot
+pcoa_viz <- p2b +
+  geom_point(aes(colour = Environment, shape = Environment), size = 4) +
+  ggtitle("PCoA") +
+  scale_colour_manual(name = "Environment", values = env_cols) +
+  scale_shape_manual(name = "Environment", values = env_shapes) +
+  theme_classic() +
+  theme(panel.background = element_blank(),
+        legend.position = "bottom")
+
+# Display
+pcoa_viz
+
+# Save to file
+ggsave(
+  plot = pcoa_viz,
+  filename = "filename/Figures/16S/pcoa_16S.jpeg",
+  height = 6,
+  width = 8
+)
+
+```
+
+Conduct a permanova in the vegan package.  
+
+```{r}
+samples <- as(sample_data(physeq1_rare), "data.frame")
+
+perm1<-adonis2(phyloseq::distance(physeq1_rare, method="bray") ~ Environment,
+       data = samples)
+
+perm1
+```
+
+Permanova suggests there is significant separation by Environment in 16S profiles (p=0.001). 
+
+Permutation test for adonis under reduced model
+Terms added sequentially (first to last)
+Permutation: free
+Number of permutations: 999
+
+adonis2(formula = phyloseq::distance(physeq1_rare, method = "bray") ~ Environment, data = samples)
+          Df SumOfSqs      R2      F Pr(>F)    
+Environment  7   4.8793 0.64321 4.3781  0.001 ***
+Residual  17   2.7066 0.35679                  
+Total     24   7.5859 1.00000     
+
+
+## Plot NMDS 
+
+Prepare PCoA ordination.  
+```{r}
+ps.ordb.nmds <- ordinate(physeq1_rare, "NMDS", "bray")
+p2b.nmds = plot_ordination(physeq1_rare, ps.ordb.nmds, type="samples", color="Environment")
+```
+
+Display levels of Environments.  
+```{r}
+library(phyloseq)
+library(ggplot2)
+
+# 1. Set factor levels for only your two environments
+metadata_rare$Environment <- factor(
+  metadata_rare$Environment,
+  levels = c("Sterile", "Muck")
+)
+
+# 2. Define colours for each environment
+env_cols <- c(
+  "Sterile" = "#1f78b4",  # blue
+  "Muck"    = "#33a02c"   # green
+)
+
+# 3. Define shapes for each environment
+env_shapes <- c(
+  "Sterile" = 16,  # filled circle
+  "Muck"    = 17   # filled triangle
+)
+
+# 4. Run PCoA ordination (Bray-Curtis)
+ps.ordb <- ordinate(physeq1_rare, method = "PCoA", distance = "bray")
+
+# 5. Build the plot
+pcoa_viz <- plot_ordination(physeq1_rare, ps.ordb, type = "samples", color = "Environment") +
+  geom_point(aes(shape = Environment), size = 4) +
+  scale_colour_manual(name = "Environment", values = env_cols) +
+  scale_shape_manual(name = "Environment", values = env_shapes) +
+  ggtitle("PCoA") +
+  theme_classic() +
+  theme(
+    panel.background = element_blank(),
+    legend.position = "bottom"
+  )
+
+# 6. Display the plot
+pcoa_viz
+
+# 7. Save to file
+ggsave(
+  plot = pcoa_viz,
+  filename = "filename/Figures/16S/pcoa_16S.jpeg",
+  height = 6,
+  width = 8
+)
+
+```
+
+Output PCoA plot for visualization.  
+```{r}
+library(ggplot2)
+
+# Define your environment order
+metadata_rare$Environment <- factor(
+  metadata_rare$Environment,
+  levels = c("Sterile", "Muck")
+)
+
+# Define colours for each environment
+env_cols <- c(
+  "Sterile" = "#1f78b4",  # blue
+  "Muck"    = "#33a02c"   # green
+)
+
+# Define shapes for each environment
+env_shapes <- c(
+  "Sterile" = 16,  # filled circle
+  "Muck"    = 17   # filled triangle
+)
+
+# Build NMDS plot
+pcoa_viz.nmds <- p2b.nmds +
+  geom_point(aes(colour = Environment, shape = Environment), size = 4) +
+  ggtitle("NMDS") +
+  scale_colour_manual(name = "Environment", values = env_cols) +
+  scale_shape_manual(name = "Environment", values = env_shapes) +
+  theme_classic() +
+  theme(panel.background = element_blank(),
+        legend.position = "bottom")
+pcoa_viz.nmds +
+  scale_x_continuous(expand = expansion(mult = c(0.1, 0.1)))
+# Check stress value
+ps.nmds <- ordinate(physeq1_rare, method = "NMDS", distance = "bray")
+ps.nmds$stress
+
+# Try 3D NMDS to see if more variation appears
+ordinate(physeq1_rare, method = "NMDS", distance = "bray", k = 3)
+
+# Show plot
+pcoa_viz.nmds
+
+# Save as JPEG and PDF
+ggsave(plot = pcoa_viz.nmds, filename = "filename/Figures/16S/nmds_16S.jpeg", height = 6, width = 8)
+ggsave(plot = pcoa_viz.nmds, filename = "filename/Figures/16S/nmds_16S.pdf", height = 6, width = 8)
+
+```
+
+Conduct a permanova in the vegan package (same as test in above PCoA section).  
+
+```{r}
+samples <- as(sample_data(physeq1_rare), "data.frame")
+
+perm1<-adonis2(phyloseq::distance(physeq1_rare, method="bray") ~ Environment,
+       data = samples)
+
+perm1
+```
+
+Number of permutations: 999
+
+adonis2(formula = phyloseq::distance(physeq1_rare, method = "bray") ~ Environment, data = samples)
+          Df SumOfSqs      R2      F Pr(>F)    
+Environment  7   4.8793 0.64321 4.3781  0.001 ***
+Residual  17   2.7066 0.35679                  
+Total     24   7.5859 1.00000                  
+
+
+## Plot Heatmap of relative abundance at the family/genus level   
+
+Filter out low frequency taxa <1% relative abundance.  
+```{r}
+physeq1_rare_f
+
+physeq1_rare_prune = filter_taxa(physeq1_rare_f, function(x) mean(x) > 0.5, TRUE)
+
+taxa_names(physeq1_rare_prune) 
+```
+
+There were 1364 taxa before filtering out taxa <1% and 36 taxa after filtering.  
+
+Summarize by Environment calculating means across replicates of each life stage.  
+```{r}
+# Merge samples by Environment
+mergedGP <- merge_samples(physeq1_rare_prune, "Environment")
+
+# Set the order of environments for plotting
+Environment_order <- c("Sterile", "Muck")
+
+# Apply the order to the sample_data in mergedGP
+sample_data(mergedGP)$Environment <- factor(
+  sample_data(mergedGP)$Environment,
+  levels = Environment_order
+)
+
+
+Replace OTU number with taxa names.  
+
+View current data frame.  
+```{r}
+table<-as.matrix(t(otu_table(mergedGP)))
+table<-as.matrix(as.data.frame(table))
+colnames(table)
+rownames(table)
+```
+
+Extract taxa names at the level of Family.  
+```{r}
+tax_table<-as.matrix(t(tax_table(mergedGP)))
+tax_table<-as.matrix(t(as.data.frame(tax_table)))
+colnames(tax_table)
+rownames(tax_table)
+tax_table<-as.data.frame(tax_table)
+```
+ 
+```{r}
+#replace OTU with name from taxonomy table  
+table_names<-as.data.frame(table)
+table_names$OTU<-rownames(table)
+
+table_names$Family<-tax_table$Family[match(table_names$OTU, tax_table$OTU)]
+table_names$Genus<-tax_table$Genus[match(table_names$OTU, tax_table$OTU)]
+
+#remove non alphabetic characters from Family and Genus columns 
+table_names$Family <- gsub('[^[:alnum:] ]','',table_names$Family)
+
+table_names$Taxa<-paste(table_names$OTU, "-", table_names$Family, ":", table_names$Genus)
+
+#add to data frame 
+rownames(table_names)<-table_names$Taxa
+
+table_names<-table_names%>%
+  select(!Family)%>%
+  select(!Taxa)%>%
+  select(!Genus)%>%
+  select(!OTU)
+
+table_names<-as.matrix(table_names)
+```
+
+Draw by Environment with Complex Heatmap. 
+```{r}
+row_dend = dendsort(hclust(dist(table)))
+col_dend = dendsort(hclust(dist(t(table))))
+
+#col_fun = colorRamp2(c(0, 50, 100), c("blue", "white", "red"))
+col_fun = colorRamp2(c(0, 25, 50, 100), hcl_palette = "Blue-Red 3")
+
+pdf(file = "filename/Figures/16S/16S-ComplexHeatmap.pdf", height = 10, width = 18)
+ComplexHeatmap::Heatmap(table_names, name = "Rel. Abun. (%)", row_title = "", column_title = "16S Relative Abundance (OTU - Family:Genus) Taxa >0.5%", 
+        col = col_fun, 
+        row_names_side = "left", 
+        row_dend_side = "right",
+        width = unit(6, "in"), 
+        height = unit(8, "in"), 
+        column_dend_height = unit(.5, "in"),
+        row_dend_width = unit(.5, "in"),
+        column_dend_reorder = FALSE,
+        row_dend_reorder = TRUE,
+        row_gap = unit(2.5, "mm"),
+        clustering_distance_rows = "euclidean",
+        clustering_method_rows = "complete",
+        border = TRUE, 
+        column_names_gp =  gpar(fontsize = 12, border=FALSE),
+        column_names_rot = 35,
+        cluster_rows = row_dend, 
+        cluster_columns = col_dend,
+        column_order = Environment_order, 
+        row_names_gp = gpar(fontsize = 12, alpha = 0.75, border = FALSE))
+dev.off()
+
+```
+
+# **Alpha Diversity**  
+
+```{r}
+GP2 <- prune_taxa(taxa_sums(physeq1_rare) > 0, physeq1_rare)
+```
+
+Plot all richness metrics.  
+```{r}
+plot_richness(GP2)
+```
+
+Plot the two most commonly used - Shannon and Inverse Simpson.  
+```{r}
+library(ggplot2)
+
+# Reorder factors for your two environments
+alpha1$data$Environment <- as.character(alpha1$data$Environment)
+Environment_order <- c("Sterile", "Muck")
+alpha1$data$Environment <- factor(alpha1$data$Environment, levels = Environment_order)
+
+# Define colours for each environment
+env_cols <- c(
+  "Sterile" = "#1f78b4",  # blue
+  "Muck"    = "#33a02c"   # green
+)
+
+# Build the plot
+alpha1_plot <- alpha1 +
+  geom_point(size = 3, position = position_jitterdodge(0.6)) +
+  theme_classic() +
+  scale_color_manual(name = "Environment", values = env_cols) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"),
+    axis.title.x = element_blank(),
+    legend.position = "none"
+  )
+
+# Display
+alpha1_plot
+
+# Save as PNG and PDF
+ggsave(plot = alpha1_plot, file = "filename/Figures/16S/alpha_rare.png", width = 4, height = 7)
+ggsave(plot = alpha1_plot, file = "filename/Figures/16S/alpha_rare.pdf", width = 4, height = 7)
+```
+
+Test for differences in alpha diversity.  
+```{r}
+metadata <- as(sample_data(GP2), "data.frame")
+metadata$sample<-rownames(metadata)
+
+alpha_rare<-estimate_richness(GP2, measures=c("InvSimpson", "Shannon", "Chao1"))
+alpha_rare$sample<-rownames(alpha_rare)
+
+alpha_rare<-full_join(metadata, alpha_rare, by="sample")
+
+summary(aov(Shannon~Environment, data=alpha_rare))
+summary(aov(InvSimpson~Environment, data=alpha_rare))
+summary(aov(Chao1~Environment, data=alpha_rare))
+```
+
+There are significant differences in alpha diversity between Environments for all metrics.    
+
+summary(aov(Shannon~Environment, data=alpha_rare))
+            Df Sum Sq Mean Sq F value   Pr(>F)    
+Environment    7 20.247  2.8925   22.31 2.16e-07 ***
+Residuals   17  2.204  0.1296                     
+
+summary(aov(InvSimpson~Environment, data=alpha_rare))
+            Df Sum Sq Mean Sq F value  Pr(>F)    
+Environment    7  16906  2415.1   17.46 1.3e-06 ***
+Residuals   17   2351   138.3   
+
+summary(aov(Chao1~Environment, data=alpha_rare))
+            Df Sum Sq Mean Sq F value   Pr(>F)    
+Environment    7 342128   48875   7.706 0.000294 ***
+Residuals   17 107827    6343  
+
+
+# **Plot unknowns** 
+
+Plot data at the level of phylum in the rarefied dataset. Bacteria_unclassified are our unknowns.      
+```{r}
+plot_bar(physeq1_rare, fill="Phylum", facet_grid=~Phylum)
+```
+
