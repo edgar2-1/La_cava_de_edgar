@@ -1,0 +1,137 @@
+---
+title: "Assignment1"
+author: "Edgardo L. Rosado Ramos"
+date: "`r format(Sys.time(), '%Y-%b-%d, %I:%M %p')`"
+output: html_document
+---
+
+### Instructions / Instrucciones generales
+
+- This assignment consists of 10 questions, each worth **10 points**.  
+(Esta tarea consta de 10 preguntas, cada una vale **10 puntos**.)
+
+- Write your answers in R code chunks whenever applicable.  
+(Escribe tus respuestas en chunks de R cuando sea aplicable.)
+
+- Make sure your code runs without errors. Include comments if necessary.  
+(Asegúrate de que tu código se ejecute sin errores. Incluye comentarios si es necesario.)
+
+- For questions about chunk options, experiment with the options and write down your observations.  
+(Para preguntas sobre opciones de chunks, experimenta con ellas y escribe tus observaciones.)
+
+- Submit the assignment on your personal webpages using the **HTML file** exported/knit from the `.Rmd`.  
+Do not copy output screenshots unless requested.  
+(Entrega la tarea en tus páginas personales usando el **archivo HTML** generado/kniteado desde el `.Rmd`.  
+No copies capturas de pantalla del resultado a menos que se indique.)
+
+<br><br><br>
+
+#### **Assigning values**
+**Q1.** Create an object called height with the value 175. Print it. (Crea un objeto llamado height con el valor 175. Muéstralo en pantalla.)
+```{r echo=TRUE}
+height <- 175
+
+print(height)
+```
+
+<br><br>
+
+#### **Simple math**
+**Q2.** Calculate the result of 25 * 4 - 10. (Calcula el resultado de 25 * 4 - 10.)
+
+```{r echo=TRUE}
+25*4-10
+
+```
+
+<br><br>
+
+####  **Using functions**
+**Q3.** Use the function sqrt() to calculate the square root of 81. (Usa la función sqrt() para calcular la raíz cuadrada de 81.)
+```{r echo=TRUE}
+sqrt(81)
+```
+
+<br><br>
+
+#### **Character objects**
+**Q4.** Assign the phrase "R is fun!" to an object called message. Print it. (Asigna la frase "R is fun!" a un objeto llamado message. Muéstralo.)
+```{r echo=TRUE}
+message <- "R is fun!"
+print(message)
+
+```
+
+<br><br>
+
+#### **Object manipulation**
+**Q5.** Create two objects a <- 10 and b <- 5. Calculate their sum and store it in c.
+(Crea dos objetos a <- 10 y b <- 5. Calcula su suma y guárdala en c.)
+```{r echo=TRUE}
+a <- 10
+b <- 5
+c <- a + b
+print(c)
+```
+<br><br>
+
+#### **Logical comparison**
+**Q6.** Test whether 15 is greater than 20.  (Verifica si 15 es mayor que 20.)  
+```{r echo=TRUE}
+15 > 20
+```
+<br><br>
+
+#### **Checking classes**
+**Q7.** Check the class of the object `"Hello World"`.  (Verifica la clase del objeto `"Hello World"`.)  
+
+```{r echo=TRUE}
+class("Hello World")
+```
+
+
+<br><br>
+
+#### **Code chunk options**
+**Q8.** Run the following code chunk:  
+- Observe the warnings that appear. (Observa las advertencias que aparecen.)  
+- Modify the chunk options **to suppress warnings** without changing the code itself. (Modifica las opciones del chunk para **apagar la advertencia** sin cambiar el código.)
+
+```{r echo=FALSE, message=FALSE}
+log(-1)
+```
+
+<br><br>
+
+#### **Code chunk options**
+**Q9.** Run the following code chunk:
+- Observe the messages that appear. (Observa los mensajes que aparecen.)
+
+- Modify the chunk options to suppress messages without changing the code itself.
+(Modifica las opciones del chunk para apagar mensajes sin cambiar el código.)
+```{r echo=FALSE, warning=FALSE}
+# Load a package (may produce messages)
+library(dplyr)
+```
+
+<br><br>
+
+#### **Help files**
+**Q10.** Use R's help system to find out what the function `mean()` does. (Usa el sistema de ayuda de R para averiguar qué hace la función `mean()`.)
+```{r}
+?mean
+```
+Help on topic 'mean' was found in the following packages:
+
+Arithmetic Mean
+(in package base in library /Library/Frameworks/R.framework/Resources/library)
+Common operations on DelayedArray objects
+(in package DelayedArray in library /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/library)
+Arithmetic Mean
+(in package BiocGenerics in library /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/library)
+
+<br><br><br><br><br><br><br><br>
+
+
+
+
