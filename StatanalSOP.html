@@ -13,7 +13,7 @@
 
 <meta name="date" content="2025-09-04" />
 
-<title>StatanalSOP</title>
+<title>Statistical Analysis SOP</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -350,7 +350,7 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">StatanalSOP</h1>
+<h1 class="title toc-ignore">Statistical Analysis SOP</h1>
 <h4 class="author">Edgardo L. Rosado Ramos</h4>
 <h4 class="date">2025-09-04</h4>
 
@@ -360,6 +360,7 @@ display: none;
 <p>This document will assist in making PCoA plots, NMDS plots, heatmaps
 and alpha beta diversity plots using PhyloSeq and other R packages.
 Adapted from Huffmyer et al. 2024.</p>
+<p>WIP</p>
 <div id="if-not-already-installed" class="section level1">
 <h1>if not already installed</h1>
 <pre class="r"><code>BiocManager::install(&quot;ComplexHeatmap&quot;)
@@ -575,7 +576,7 @@ plots &lt;- lapply(seq_len(nrow(plot_specs)), function(i) {
   
   # Save the plot
   ggsave(
-    filename = paste0(&quot;Mcap2020/Figures/16S/relabund_&quot;, tolower(r), &quot;_rare.png&quot;),
+    filename = paste0(&quot;yourfilename/Figures/16S/relabund_&quot;, tolower(r), &quot;_rare.png&quot;),
     plot = p,
     height = h,
     width = 18
@@ -651,7 +652,7 @@ col_dend &lt;- dendsort(hclust(dist(t(df_mat))))
 col_fun &lt;- colorRamp2(c(0, 25, 50, 75, 100), c(&quot;blue&quot;, &quot;white&quot;, &quot;orange&quot;, &quot;white&quot;, &quot;red&quot;))
 
 # 4. Save heatmap to PDF
-pdf(file = &quot;Mcap2020/Figures/16S/16S-Phylum-Heatmap-YOURS.pdf&quot;, height = 8, width = 8)
+pdf(file = &quot;yourfilename/Figures/16S/16S-Phylum-Heatmap-YOURS.pdf&quot;, height = 8, width = 8)
 
 ComplexHeatmap::Heatmap(
   df_mat,
@@ -736,7 +737,7 @@ col_dend &lt;- dendsort(hclust(dist(t(df_mat_fam))))
 col_fun &lt;- colorRamp2(c(0, 25, 50), c(&quot;blue&quot;, &quot;white&quot;, &quot;red&quot;))
 
 # Save to PDF
-pdf(file = &quot;Mcap2020/Figures/16S/16S-Family-Heatmap.pdf&quot;, height = 10, width = 10)
+pdf(file = &quot;yourfilename/Figures/16S/16S-Family-Heatmap.pdf&quot;, height = 10, width = 10)
 
 ComplexHeatmap::Heatmap(
   df_mat_fam,
@@ -831,7 +832,7 @@ pcoa_viz
 # Save to file
 ggsave(
   plot = pcoa_viz,
-  filename = &quot;Mcap2020/Figures/16S/pcoa_16S.jpeg&quot;,
+  filename = &quot;yourfilename/Figures/16S/pcoa_16S.jpeg&quot;,
   height = 6,
   width = 8
 )</code></pre>
@@ -901,7 +902,7 @@ pcoa_viz
 # 7. Save to file
 ggsave(
   plot = pcoa_viz,
-  filename = &quot;Mcap2020/Figures/16S/pcoa_16S.jpeg&quot;,
+  filename = &quot;yourfilename/Figures/16S/pcoa_16S.jpeg&quot;,
   height = 6,
   width = 8
 )</code></pre>
@@ -948,8 +949,8 @@ ordinate(physeq1_rare, method = &quot;NMDS&quot;, distance = &quot;bray&quot;, k
 pcoa_viz.nmds
 
 # Save as JPEG and PDF
-ggsave(plot = pcoa_viz.nmds, filename = &quot;Mcap2020/Figures/16S/nmds_16S.jpeg&quot;, height = 6, width = 8)
-ggsave(plot = pcoa_viz.nmds, filename = &quot;Mcap2020/Figures/16S/nmds_16S.pdf&quot;, height = 6, width = 8)</code></pre>
+ggsave(plot = pcoa_viz.nmds, filename = &quot;yourfilename/Figures/16S/nmds_16S.jpeg&quot;, height = 6, width = 8)
+ggsave(plot = pcoa_viz.nmds, filename = &quot;yourfilename/Figures/16S/nmds_16S.pdf&quot;, height = 6, width = 8)</code></pre>
 <p>Conduct a permanova in the vegan package (same as test in above PCoA
 section).</p>
 <pre class="r"><code>samples &lt;- as(sample_data(physeq1_rare), &quot;data.frame&quot;)
@@ -1032,7 +1033,7 @@ col_dend = dendsort(hclust(dist(t(table))))
 #col_fun = colorRamp2(c(0, 50, 100), c(&quot;blue&quot;, &quot;white&quot;, &quot;red&quot;))
 col_fun = colorRamp2(c(0, 25, 50, 100), hcl_palette = &quot;Blue-Red 3&quot;)
 
-pdf(file = &quot;Mcap2020/Figures/16S/16S-ComplexHeatmap.pdf&quot;, height = 10, width = 18)
+pdf(file = &quot;yourfilename/Figures/16S/16S-ComplexHeatmap.pdf&quot;, height = 10, width = 18)
 ComplexHeatmap::Heatmap(table_names, name = &quot;Rel. Abun. (%)&quot;, row_title = &quot;&quot;, column_title = &quot;16S Relative Abundance (OTU - Family:Genus) Taxa &gt;0.5%&quot;, 
         col = col_fun, 
         row_names_side = &quot;left&quot;, 
@@ -1090,8 +1091,8 @@ alpha1_plot &lt;- alpha1 +
 alpha1_plot
 
 # Save as PNG and PDF
-ggsave(plot = alpha1_plot, file = &quot;Mcap2020/Figures/16S/alpha_rare.png&quot;, width = 4, height = 7)
-ggsave(plot = alpha1_plot, file = &quot;Mcap2020/Figures/16S/alpha_rare.pdf&quot;, width = 4, height = 7)</code></pre>
+ggsave(plot = alpha1_plot, file = &quot;yourfilename/Figures/16S/alpha_rare.png&quot;, width = 4, height = 7)
+ggsave(plot = alpha1_plot, file = &quot;yourfilename/Figures/16S/alpha_rare.pdf&quot;, width = 4, height = 7)</code></pre>
 <p>Test for differences in alpha diversity.</p>
 <pre class="r"><code>metadata &lt;- as(sample_data(GP2), &quot;data.frame&quot;)
 metadata$sample&lt;-rownames(metadata)

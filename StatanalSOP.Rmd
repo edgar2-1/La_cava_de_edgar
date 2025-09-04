@@ -1,11 +1,12 @@
 ---
-title: "StatanalSOP"
+title: "Statistical Analysis SOP"
 author: "Edgardo L. Rosado Ramos"
 date: "2025-09-04"
 output: html_document
 ---
 This document will assist in making PCoA plots, NMDS plots, heatmaps and alpha beta diversity plots using PhyloSeq and other R packages. Adapted from Huffmyer et al. 2024.
 
+WIP
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(eval = FALSE)
@@ -263,7 +264,7 @@ plots <- lapply(seq_len(nrow(plot_specs)), function(i) {
   
   # Save the plot
   ggsave(
-    filename = paste0("Mcap2020/Figures/16S/relabund_", tolower(r), "_rare.png"),
+    filename = paste0("yourfilename/Figures/16S/relabund_", tolower(r), "_rare.png"),
     plot = p,
     height = h,
     width = 18
@@ -350,7 +351,7 @@ col_dend <- dendsort(hclust(dist(t(df_mat))))
 col_fun <- colorRamp2(c(0, 25, 50, 75, 100), c("blue", "white", "orange", "white", "red"))
 
 # 4. Save heatmap to PDF
-pdf(file = "Mcap2020/Figures/16S/16S-Phylum-Heatmap-YOURS.pdf", height = 8, width = 8)
+pdf(file = "yourfilename/Figures/16S/16S-Phylum-Heatmap-YOURS.pdf", height = 8, width = 8)
 
 ComplexHeatmap::Heatmap(
   df_mat,
@@ -451,7 +452,7 @@ col_dend <- dendsort(hclust(dist(t(df_mat_fam))))
 col_fun <- colorRamp2(c(0, 25, 50), c("blue", "white", "red"))
 
 # Save to PDF
-pdf(file = "Mcap2020/Figures/16S/16S-Family-Heatmap.pdf", height = 10, width = 10)
+pdf(file = "yourfilename/Figures/16S/16S-Family-Heatmap.pdf", height = 10, width = 10)
 
 ComplexHeatmap::Heatmap(
   df_mat_fam,
@@ -556,7 +557,7 @@ pcoa_viz
 # Save to file
 ggsave(
   plot = pcoa_viz,
-  filename = "Mcap2020/Figures/16S/pcoa_16S.jpeg",
+  filename = "yourfilename/Figures/16S/pcoa_16S.jpeg",
   height = 6,
   width = 8
 )
@@ -640,7 +641,7 @@ pcoa_viz
 # 7. Save to file
 ggsave(
   plot = pcoa_viz,
-  filename = "Mcap2020/Figures/16S/pcoa_16S.jpeg",
+  filename = "yourfilename/Figures/16S/pcoa_16S.jpeg",
   height = 6,
   width = 8
 )
@@ -691,8 +692,8 @@ ordinate(physeq1_rare, method = "NMDS", distance = "bray", k = 3)
 pcoa_viz.nmds
 
 # Save as JPEG and PDF
-ggsave(plot = pcoa_viz.nmds, filename = "Mcap2020/Figures/16S/nmds_16S.jpeg", height = 6, width = 8)
-ggsave(plot = pcoa_viz.nmds, filename = "Mcap2020/Figures/16S/nmds_16S.pdf", height = 6, width = 8)
+ggsave(plot = pcoa_viz.nmds, filename = "yourfilename/Figures/16S/nmds_16S.jpeg", height = 6, width = 8)
+ggsave(plot = pcoa_viz.nmds, filename = "yourfilename/Figures/16S/nmds_16S.pdf", height = 6, width = 8)
 
 ```
 
@@ -796,7 +797,7 @@ col_dend = dendsort(hclust(dist(t(table))))
 #col_fun = colorRamp2(c(0, 50, 100), c("blue", "white", "red"))
 col_fun = colorRamp2(c(0, 25, 50, 100), hcl_palette = "Blue-Red 3")
 
-pdf(file = "Mcap2020/Figures/16S/16S-ComplexHeatmap.pdf", height = 10, width = 18)
+pdf(file = "yourfilename/Figures/16S/16S-ComplexHeatmap.pdf", height = 10, width = 18)
 ComplexHeatmap::Heatmap(table_names, name = "Rel. Abun. (%)", row_title = "", column_title = "16S Relative Abundance (OTU - Family:Genus) Taxa >0.5%", 
         col = col_fun, 
         row_names_side = "left", 
@@ -862,8 +863,8 @@ alpha1_plot <- alpha1 +
 alpha1_plot
 
 # Save as PNG and PDF
-ggsave(plot = alpha1_plot, file = "Mcap2020/Figures/16S/alpha_rare.png", width = 4, height = 7)
-ggsave(plot = alpha1_plot, file = "Mcap2020/Figures/16S/alpha_rare.pdf", width = 4, height = 7)
+ggsave(plot = alpha1_plot, file = "yourfilename/Figures/16S/alpha_rare.png", width = 4, height = 7)
+ggsave(plot = alpha1_plot, file = "yourfilename/Figures/16S/alpha_rare.pdf", width = 4, height = 7)
 ```
 
 Test for differences in alpha diversity.  
