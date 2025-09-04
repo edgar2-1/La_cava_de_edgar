@@ -10,7 +10,7 @@ editor_options:
   chunk_output_type: inline
 ---
 # Links
-[Statistical analysis with R](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment1.html)
+[Statistical analysis with R](Assignment1.html)
 
 [Restaurante fav](https://www.burgerkingpr.com/en/?utm_campaign=dlc_hub_bk_aon_search&utm_source=google&utm_medium=cpc&utm_content=july_brand_responsive_1&gad_source=1&gad_campaignid=17635535737&gbraid=0AAAAAowLq6Zk8PvFsWx9zHKPFjk08jtz8&gclid=Cj0KCQjwh5vFBhCyARIsAHBx2wxx48rpaopf5fqDya8PS7bGDyg7veM4MqAs5I5QhKqmFmMR-bmUumsaAnNMEALw_wcB)
 
