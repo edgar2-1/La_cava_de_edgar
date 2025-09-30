@@ -1,0 +1,178 @@
+---
+title: "Assignment 2"
+author: "Edgardo L. Rosado Ramos"
+date: "2025-09-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Deadline / Fecha de entrega
+Deadline: Monday, Sep 15, 2025; 6:00 PM.
+Fecha de entrega: Lunes, 15 de septiembre de 2025; 6:00 PM.
+
+Instructions / Instrucciones generales
+This assignment consists of 10 questions, each worth 10 points.
+(Esta tarea consta de 10 preguntas, cada una vale 10 puntos.)
+
+Write your answers in R code chunks whenever applicable.
+(Escribe tus respuestas en chunks de R cuando sea aplicable.)
+
+Make sure your code runs without errors. Include comments if necessary.
+(Asegúrate de que tu código se ejecute sin errores. Incluye comentarios si es necesario.)
+
+For questions about chunk options, experiment with the options and write down your observations.
+(Para preguntas sobre opciones de chunks, experimenta con ellas y escribe tus observaciones.)
+
+Submit the assignment on your personal webpages using the HTML file exported/knit from the .Rmd.
+Do not copy output screenshots unless requested.
+(Entrega la tarea en tus páginas personales usando el archivo HTML generado/kniteado desde el .Rmd.
+No copies capturas de pantalla del resultado a menos que se indique.)
+
+
+
+
+
+Using functions / Usando funciones
+
+Q1. Convert the built-in dataset BOD to a list and print the list. Q1. Convierte el conjunto de datos BOD (predefinido en R) a una lista e imprime la lista.
+
+```{r}
+BODlist <- as.list(BOD)
+print(BODlist)
+
+```
+
+Converting matrix into DataFrame
+
+Q2. Convert the following data frame into a data frame and print the matrix. Q2. Convierte el siguiente data frame en un data frame e imprime la matriz.
+```{r}
+df1=data.frame(
+  "Name"=c("a","b","c","d"),
+  "Age"=c(12,34,23,67),
+  "BMI"=c(22,12,10,11),
+  "Country"=c("Malaysia","India","Spain","England"))
+print(df1)
+##   Name Age BMI  Country
+## 1    a  12  22 Malaysia
+## 2    b  34  12    India
+## 3    c  23  10    Spain
+## 4    d  67  11  England
+class(df1)
+## [1] "data.frame"
+
+```
+
+
+Accessing 1st &2nd rows
+
+Q3. Create a subset of the df dataset that includes only the first and second rows. Print the subset.. Q3. Crea un subconjunto del df que incluya únicamente la primera y la segunda fila. Imprime el subconjunto.
+```{r}
+df=data.frame(
+  A=c("Raju","Kumar","Chandru","Deepak","Raina", "Dhoni", "Hema", "Vandana", "Bela","Anand" ),
+  B=c(12,34,23,67,23,43,23,38,34,12),
+  C=c("M","M","M","M","M","M","F","F","F","M"),
+  D=c("Malaysia","India","Spain","England", "Malaysia", "Malaysia", "India", "Egypt", "Italy", "Peru"))
+
+names(df)<-c("Name", "Age", "Gender","Country" )
+print(df)
+##       Name Age Gender  Country
+## 1     Raju  12      M Malaysia
+## 2    Kumar  34      M    India
+## 3  Chandru  23      M    Spain
+## 4   Deepak  67      M  England
+## 5    Raina  23      M Malaysia
+## 6    Dhoni  43      M Malaysia
+## 7     Hema  23      F    India
+## 8  Vandana  38      F    Egypt
+## 9     Bela  34      F    Italy
+## 10   Anand  12      M     Peru
+class(df)
+## [1] "data.frame"
+```
+
+```{r}
+fila12 <- df[1:2,]
+print(fila12)
+```
+Accessing 1st &2nd columns
+
+Q4. Create a subset of the df from Q3 that includes only the first and second columns. Print the subset. Q4. Crea un subconjunto del df de la Q3 que incluya únicamente la primera y segunda columna. Imprime el subconjunto.
+
+```{r}
+col1y2_subset <- df[,1:2]
+```
+
+# Your subset here`
+```{r}
+print(col1y2_subset)
+
+```
+
+
+Sorting the dataframe
+Q5. Sort the df from Q3 by the Age column in ascending order. Print the sorted data frame. Q5. Ordena el df de la Q3 por la columna Age en orden ascendente. Imprime el data frame ordenado.
+
+```{r}
+ascendente <- df[order(df$Age), ]
+```
+# Print the sorted subset
+```{r}
+print(ascendente)
+```
+
+
+Adding a new column
+
+Q6. Add a new column called Score to the df from Q3 with the following values: 85, 90, 78, 88, 90, 92, 80, 90, 87, 100. Print the updated data frame. Q6. Agrega una nueva columna llamada Score al df de la Q3 con los siguientes valores: 85, 90, 78, 88, 90, 92, 80, 90, 87, 100. Imprime el data frame actualizado.
+```{r}
+df$Score <- c(85, 90, 78, 88, 90, 92, 80, 90, 87, 100)
+```
+
+# Your subset here
+```{r}
+print(df)
+```
+
+
+Filtering rows with a condition
+
+Q7. From the df in Q3, create a subset where Age is greater than 30. Print the subset. Q7. Del df de la Q3, crea un subconjunto donde Age sea mayor a 30. Imprime el subconjunto.
+```{r}
+subset_edad30 <- df[df$Age > 30, ]
+```
+
+# Your subset here
+```{r}
+print(subset_edad30)
+```
+
+
+
+Renaming columns Q8. Q8. Rename the columns of df from Q3 as Person, Years, Gender, and Nation. Print the updated data frame. Q8. Renombra las columnas del df de la Q3 como Person, Years, Index y Nation. Imprime el data frame actualizado..
+```{r}
+colnames(df) <- c("Person", "Years","Index", "Nation")
+
+
+
+
+
+```
+# Your new column names here
+
+
+
+Selecting multiple conditions
+
+Q9. From the df in Q2, select rows where Age is greater than 20 and BMI is less than 15. Print the subset. Q9. Del df de la Q2, selecciona las filas donde Age sea mayor a 20 y BMI menor a 15. Imprime el subconjunto.
+
+# Your subset here
+
+
+
+Summarizing a column
+
+Q10. Calculate the mean of the Age column from df in Q2. Print the result. Q10. Calcula la media de la columna Age del df de la Q2. Imprime el resultado.
+
+# Your code here
