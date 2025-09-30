@@ -19,11 +19,11 @@ editor_options:
 ![Foto con Jason](/Users/Familia/Desktop/IMG_0452.jpg)
 
 #Assignments <br>
-[Assignment 1](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment/Assignment1.html)
+[Assignment 1](Assignment/Assignment1.html)
 
-[Assignment 2](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment/Assignment2.html)
+[Assignment 2](Assignment/Assignment2.html)
 
-[Practice cereal](https://github.com/edgar2-1/La_cava_de_edgar/main/practiceCereal.html)
+[Practice cereal](practiceCereal.html)
 
 
 
