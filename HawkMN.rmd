@@ -1,0 +1,275 @@
+---
+title: "Microbiome Analysis of Adult vs. Neonate Hawksbill Turtles"
+author: "Edgardo L. Rosado Ramos"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# This chunk sets up our R environment.
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# Load all necessary libraries
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(vegan)
+library(rstatix) # For making nice statistical tables
+
+# This script assumes your final phyloseq object is named 'physeq_final'.
+
+# --- Define custom color and shape palettes for our two-factor design ---
+
+# 1. Define colors for LifeStage
+lifestage_cols <- c("Adult" = "darkorchid", "Neonate" = "goldenrod")
+
+# 2. Define shapes for SampleType
+sample_type_shapes <- c("Cloaca" = 17, "Buccal" = 16, "Control" = 15) # Triangle, Circle, Square
+
+# Set a default plotting theme for all plots
+theme_set(theme_bw())
+```
+
+## 1. Alpha Diversity
+
+Here we compare Shannon diversity to see if it differs by Life Stage, Sample Type, or a combination of both.
+
+```{r alpha-diversity-plot}
+# The plot_richness function creates a base plot.
+# We add ggplot2 layers to customize it for a two-factor design.
+alpha_plot <- plot_richness(physeq_final, x = "SampleType", measures = c("Shannon")) +
+  geom_boxplot(aes(fill = LifeStage), alpha = 0.8) +
+  scale_fill_manual(values = lifestage_cols, name = "Life Stage") +
+  labs(title = "Alpha Diversity by Life Stage and Sample Type", 
+       x = "Sample Type", 
+       y = "Shannon Diversity Index") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(alpha_plot)
+```
+
+**Statistical Test:** A **Two-Way ANOVA** is the correct test to see if `LifeStage`, `SampleType`, or their interaction significantly affects alpha diversity.
+
+```{r alpha-diversity-stats, results='asis'}
+# Extract the alpha diversity data and metadata
+alpha_data <- estimate_richness(physeq_final, measures = "Shannon")
+alpha_data <- cbind(alpha_data, sample_data(physeq_final))
+
+# Perform the Two-Way ANOVA
+aov_results <- aov(Shannon ~ LifeStage * SampleType, data = alpha_data)
+
+# Print the results in a nice table
+knitr::kable(anova_summary(aov_results), caption = "Two-Way ANOVA results for Shannon Diversity")
+```
+
+---
+
+## 2. Beta Diversity
+
+Here we visualize differences in the overall community structure using a PCoA plot.
+
+```{r pcoa-plot-two-factor}
+# 1. Calculate the ordination (PCoA on Bray-Curtis distances)
+pcoa_ord <- ordinate(physeq_final, method = "PCoA", distance = "bray")
+
+# 2. Create the plot
+# We map LifeStage to COLOR and SampleType to SHAPE
+pcoa_plot <- plot_ordination(physeq_final, pcoa_ord, type = "samples") +
+  geom_point(aes(color = LifeStage, shape = SampleType), size = 4, alpha = 0.8) +
+  scale_color_manual(values = lifestage_cols, name = "Life Stage") +
+  scale_shape_manual(values = sample_type_shapes, name = "Sample Type") +
+  labs(title = "PCoA of Microbial Communities",
+       subtitle = "Bray-Curtis Dissimilarity")
+
+print(pcoa_plot)
+```
+
+**Statistical Test:** **PERMANOVA** (`adonis2`) tells us if the visual clustering is statistically significant. The `*` in the formula tests for both main effects and the interaction.
+
+```{r beta-diversity-stats-two-factor, results='asis'}
+# Get the distance matrix and metadata
+bray_dist <- phyloseq::distance(physeq_final, method = "bray")
+sample_df <- data.frame(sample_data(physeq_final))
+
+# Run the PERMANOVA test with the interaction term
+permanova_results <- adonis2(bray_dist ~ LifeStage * SampleType, data = sample_df)
+
+# Print the results in a nice table
+knitr::kable(permanova_results, caption = "PERMANOVA results for Beta Diversity")
+```
+
+---
+
+## 3. Taxonomic Composition
+
+This plot shows the relative abundance of the major bacterial Phyla, separated by both Life Stage and Sample Type.
+
+```{r bar-plot-two-factor}
+# Agglomerate taxa at the Phylum level for a clear overview
+physeq_phylum <- tax_glom(physeq_final, taxrank = "Phylum")
+
+bar_plot <- plot_bar(physeq_phylum, x = "SampleID", fill = "Phylum") +
+  # Use facet_grid to create a panel for each combination of LifeStage and SampleType
+  facet_grid(LifeStage ~ SampleType, scales = "free_x") +
+  labs(title = "Relative Abundance by Phylum", x = "Sample", y = "Relative Abundance") +
+  theme(axis.text.x = element_blank(), # Hiding sample names for clarity
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(size = 10)) # Adjust facet label size
+
+print(bar_plot)
+```
+
+
+
+```{r setup, include=FALSE}
+# This first chunk sets up our R environment.
+# It loads all the necessary libraries for the entire analysis.
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ComplexHeatmap)
+library(DESeq2)
+library(rstatix) # For making nice statistical tables
+
+# This script assumes your final, clean phyloseq object is named 'physeq_final'.
+# If you don't have it in your environment, you will need to run the data loading script first.
+
+# Let's define our custom colors and shapes for consistency in all plots
+sample_type_cols <- c("Buccal"="#1f78b4", "Cloaca"="#33a02c", "Control"="#e31a1c")
+sample_type_shapes <- c("Buccal"=16, "Cloaca"=17, "Control"=15)
+
+# Set a default plotting theme
+theme_set(theme_bw())
+```
+
+```{r alpha_diversity-plot}
+# Create the plot using plot_richness
+alpha_plot <- plot_richness(physeq_final, x = "SampleType", measures = c("Shannon")) +
+  geom_boxplot(aes(fill = SampleType), alpha = 0.7) +
+  scale_fill_manual(values = sample_type_cols, name = "Sample Type") +
+  labs(title = "Alpha Diversity (Shannon Index)", x = "Sample Type", y = "Shannon Diversity") +
+  theme(legend.position = "none") # Hide legend as x-axis is clear
+
+print(alpha_plot)
+```
+
+```{r alpha-diversity-stats, results='asis'}
+# Extract the alpha diversity data
+alpha_data <- estimate_richness(physeq_final, measures = "Shannon")
+alpha_data$SampleType <- sample_data(physeq_final)$SampleType
+
+# Perform the Kruskal-Wallis test
+kruskal_test_result <- kruskal_test(data = alpha_data, Shannon ~ SampleType)
+
+# Print the results in a nice table
+knitr::kable(kruskal_test_result, caption = "Kruskal-Wallis test for Shannon Diversity")
+```
+
+```{r pcoa-plot}
+# Ordination
+pcoa_ord <- ordinate(physeq_final, method = "PCoA", distance = "bray")
+
+# Create the plot with ellipses
+pcoa_plot <- plot_ordination(physeq_final, pcoa_ord, type = "samples", color = "SampleType", shape = "SampleType") +
+  geom_point(size = 4) +
+  stat_ellipse(type = "t", level = 0.95) +
+  scale_color_manual(name = "Sample Type", values = sample_type_cols) +
+  scale_shape_manual(name = "Sample Type", values = sample_type_shapes) +
+  labs(title = "PCoA of E. imbricata Microbial Communities",
+       subtitle = "Bray-Curtis Dissimilarity")
+
+print(pcoa_plot)
+```
+
+```{r beta-diversity-stats, results='asis'}
+# Get distance matrix and metadata
+bray_dist <- phyloseq::distance(physeq_final, method = "bray")
+sample_df <- data.frame(sample_data(physeq_final))
+
+# Run the PERMANOVA test
+permanova_result <- adonis2(bray_dist ~ SampleType, data = sample_df, permutations = 999)
+
+# Print the results in a nice table
+knitr::kable(permanova_result, caption = "PERMANOVA results for Beta Diversity")
+```
+
+```{r bar-plot}
+# To make the plot readable, we will agglomerate taxa at the Phylum level
+physeq_phylum <- tax_glom(physeq_final, taxrank = "Phylum")
+
+bar_plot <- plot_bar(physeq_phylum, x = "SampleID", fill = "Phylum") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  labs(title = "Relative Abundance by Phylum", x = "Sample", y = "Relative Abundance") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8))
+
+print(bar_plot)
+```
+
+### Heatmap of Abundant Genera
+
+This heatmap shows the relative abundance of the top 30 most abundant genera across all samples.
+
+```{r heatmap}
+# Agglomerate to Genus level
+physeq_genus <- tax_glom(physeq_final, taxrank = "Genus", NArm = FALSE)
+
+# Get the top 30 most abundant taxa
+top30_taxa <- names(sort(taxa_sums(physeq_genus), decreasing = TRUE)[1:30])
+physeq_top30 <- prune_taxa(top30_taxa, physeq_genus)
+
+# Create the heatmap
+plot_heatmap(physeq_top30, 
+             sample.label = "SampleType", 
+             taxa.label = "Genus", 
+             sample.order = "SampleType",
+             low = "#FFFFFF", high = "#0000FF", na.value = "white",
+             title = "Heatmap of Top 30 Most Abundant Genera")
+```
+
+---
+
+## 4. Differential Abundance Analysis
+
+To identify which specific taxa are significantly different between groups, we use DESeq2.
+
+```{r deseq2-analysis}
+# Convert phyloseq object to DESeq2 object
+# We must use the non-rarefied data for DESeq2, so we need to re-import or use a pre-rarefaction object.
+# Let's assume 'physeq_unrarefied' is your object before rarefaction.
+# For demonstration, we will use physeq_final, but this is not best practice.
+# Add 1 to all counts to handle zeros, a requirement for DESeq2
+physeq_deseq <- physeq_final
+otu_table(physeq_deseq) <- otu_table(physeq_deseq) + 1
+
+deseq_obj <- phyloseq_to_deseq2(physeq_deseq, design = ~ SampleType)
+
+# Run DESeq2
+deseq_results <- DESeq(deseq_obj, test = "Wald", fitType = "parametric")
+
+# --- Compare Buccal vs. Control ---
+res_buccal_vs_control <- results(deseq_results, contrast = c("SampleType", "Buccal", "Control"))
+res_buccal_vs_control_sig <- subset(res_buccal_vs_control, padj < 0.05) # Filter for significant results
+res_buccal_vs_control_sig <- cbind(as.data.frame(res_buccal_vs_control_sig), as.data.frame(tax_table(physeq_final)[rownames(res_buccal_vs_control_sig), ]))
+
+# --- Compare Cloaca vs. Control ---
+res_cloaca_vs_control <- results(deseq_results, contrast = c("SampleType", "Cloaca", "Control"))
+res_cloaca_vs_control_sig <- subset(res_cloaca_vs_control, padj < 0.05)
+res_cloaca_vs_control_sig <- cbind(as.data.frame(res_cloaca_vs_control_sig), as.data.frame(tax_table(physeq_final)[rownames(res_cloaca_vs_control_sig), ]))
+
+```
+
+### Table: Taxa Significantly Different Between Buccal and Control
+
+```{r deseq2-table-1, results='asis'}
+knitr::kable(res_buccal_vs_control_sig, caption = "Differentially abundant taxa (p-adj < 0.05) between Buccal and Control samples.")
+```
+
+### Table: Taxa Significantly Different Between Cloaca and Control
+
+```{r deseq2-table-2, results='asis'}
+knitr::kable(res_cloaca_vs_control_sig, caption = "Differentially abundant taxa (p-adj < 0.05) between Cloaca and Control samples.")
+```
