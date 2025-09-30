@@ -23,4 +23,7 @@ editor_options:
 
 [Assignment 2](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment/Assignment2.html)
 
+[Practice cereal](https://github.com/edgar2-1/La_cava_de_edgar/main/practiceCereal.html)
+
+
 
