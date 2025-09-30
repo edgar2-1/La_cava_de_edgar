@@ -154,20 +154,24 @@ Renaming columns Q8. Q8. Rename the columns of df from Q3 as Person, Years, Gend
 ```{r}
 colnames(df) <- c("Person", "Years","Index", "Nation")
 
-
-
-
-
 ```
 # Your new column names here
-
+```{r}
+print(df)
+```
 
 
 Selecting multiple conditions
 
 Q9. From the df in Q2, select rows where Age is greater than 20 and BMI is less than 15. Print the subset. Q9. Del df de la Q2, selecciona las filas donde Age sea mayor a 20 y BMI menor a 15. Imprime el subconjunto.
+```{r}
+mas20menos15 <- df1[df1$Age > 20 & df1$BMI < 15, ]
+```
 
 # Your subset here
+```{r}
+print(mas20menos15)
+```
 
 
 
@@ -176,3 +180,6 @@ Summarizing a column
 Q10. Calculate the mean of the Age column from df in Q2. Print the result. Q10. Calcula la media de la columna Age del df de la Q2. Imprime el resultado.
 
 # Your code here
+```{r}
+mean(df1$Age)
+```
