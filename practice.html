@@ -358,7 +358,7 @@ display: none;
 
 
 <p>`— title: “Exam Practice” subtitle: ’’ author: “Pablo E.
-Gutiérrez-Fonseca” date: “2025-Sep-30, 04:15 PM” —</p>
+Gutiérrez-Fonseca” date: “2025-Sep-30, 04:31 PM” —</p>
 <div id="load-libraries" class="section level3">
 <h3>Load libraries</h3>
 <pre class="r"><code>library(readxl)
@@ -416,6 +416,12 @@ filas 1 a 10 del marco de datos cereal.</em>)</li>
 ##  8 Corn Flakes  K          1         101   0.1    202    24   0.8    3       2  
 ##  9 Corn Pops    K          1         117   0.2    120    28   0.3   15       1  
 ## 10 Crispix      K          1         113   0.3    229    26   0.1    3       2</code></pre>
+<pre class="r"><code>#in comma separated values:
+cereal$name[1:10]</code></pre>
+<pre><code>##  [1] &quot;AppleJacks&quot;            &quot;Boo Berry&quot;             &quot;Cap&#39;n Crunch&quot;         
+##  [4] &quot;Cinnamon Toast Crunch&quot; &quot;Cocoa Blasts&quot;          &quot;Cocoa Puffs&quot;          
+##  [7] &quot;Cookie Crisp&quot;          &quot;Corn Flakes&quot;           &quot;Corn Pops&quot;            
+## [10] &quot;Crispix&quot;</code></pre>
 <ol start="2" style="list-style-type: decimal">
 <li>Create a new data frame called Kelloggs that only contains rows
 where company == “K”. (<em>Cree un nuevo marco de datos llamado Kelloggs
@@ -437,6 +443,8 @@ Kelloggs</code></pre>
 ##  9 Rice Krispi… K          0.75      160   1.7    252    35   0       12     1.3
 ## 10 Smart Start  K          1         182   0.7    275    43   2.8     14     4  
 ## 11 Special K    K          1         117   0.4    224    22   0.8      4     7</code></pre>
+<pre class="r"><code>paste(Kelloggs$name, collapse = &quot;, &quot;)</code></pre>
+<pre><code>## [1] &quot;AppleJacks, Corn Flakes, Corn Pops, Crispix, Froot Loops, Frosted Mini-Wheats, Product 19, Raisin Bran, Rice Krispie Treats, Smart Start, Special K&quot;</code></pre>
 <ol start="3" style="list-style-type: decimal">
 <li>From the cereal data, extract the names of all cereals that have
 more than 10 grams of sugar. (<em>Del conjunto de datos cereal, extraiga
@@ -450,6 +458,8 @@ azúcar.</em>)</li>
 ## [10] &quot;Golden Grahams&quot;        &quot;Honey Nut Clusters&quot;    &quot;Honey Nut Heaven&quot;     
 ## [13] &quot;Lucky Charms&quot;          &quot;Raisin Bran&quot;           &quot;Reese&#39;s Puffs&quot;        
 ## [16] &quot;Rice Krispie Treats&quot;   &quot;Smart Start&quot;</code></pre>
+<pre class="r"><code>paste(cereal$name[cereal$sugars &gt; 10], collapse = &quot;, &quot;)</code></pre>
+<pre><code>## [1] &quot;AppleJacks, Boo Berry, Cap&#39;n Crunch, Cinnamon Toast Crunch, Cocoa Blasts, Cocoa Puffs, Cookie Crisp, Corn Pops, Froot Loops, Golden Grahams, Honey Nut Clusters, Honey Nut Heaven, Lucky Charms, Raisin Bran, Reese&#39;s Puffs, Rice Krispie Treats, Smart Start&quot;</code></pre>
 <ol start="4" style="list-style-type: decimal">
 <li>Find the mean calories of all cereals in the dataset. (<em>Encuentre
 las calorías promedio de todos los cereales en el conjunto de
@@ -481,20 +491,25 @@ cereals meet a minimum dietary fiber content. This analysis helps to
 better understand the nutritional characteristics of the different
 cereals in the dataset.</p>
 <p><strong>Espanol</strong> En el conjunto de datos cereal, las primeras
-diez filas incluyen cereales como [nombre de algunos cereales de las
-primeras 10 filas], mostrando un rango de valores en calorías, azúcar y
-fibra. Al filtrar los cereales de la empresa Kellogg’s, se obtiene un
-subconjunto que contiene marcas como [ejemplo de cereales Kellogg’s],
-mientras que al enfocarnos en los cereales con más de 10 gramos de
-azúcar, encontramos productos como [nombres de cereales con alto
-contenido de azúcar]. El promedio de calorías de todos los cereales en
-el dataset es de aproximadamente [valor promedio de calorías], lo que
-proporciona una idea general del contenido energético de los productos.
-Finalmente, al contar los cereales con al menos 2 gramos de fibra, se
-identifican [número de cereales con ≥2g de fibra] cereales, indicando
-cuántos cumplen con un contenido mínimo de fibra dietética. Este
-análisis permite comprender mejor las características nutricionales de
-los diferentes cereales del conjunto de datos.</p>
+diez filas incluyen cereales como AppleJacks, Boo Berry, Cap’n Crunch,
+Cinnamon Toast Crunch, Cocoa Blasts, Cocoa Puffs, Cookie Crisp, Corn
+Flakes, Corn Pops y Crispix, mostrando un rango de valores en calorías,
+azúcar y fibra. Al filtrar los cereales de la empresa Kellogg’s, se
+obtiene un subconjunto que contiene marcas como AppleJacks, Corn Flakes,
+Corn Pops, Crispix, Froot Loops, Frosted Mini-Wheats, Product 19, Raisin
+Bran, Rice Krispie Treats, Smart Start y Special K, mientras que al
+enfocarnos en los cereales con más de 10 gramos de azúcar, encontramos
+productos como AppleJacks, Boo Berry, Cap’n Crunch, Cinnamon Toast
+Crunch, Cocoa Blasts, Cocoa Puffs, Cookie Crisp, Corn Pops, Froot Loops,
+Golden Grahams, Honey Nut Clusters, Honey Nut Heaven, Lucky Charms,
+Raisin Bran, Reese’s Puffs, Rice Krispie Treats y Smart Start. El
+promedio de calorías de todos los cereales en el dataset es de
+aproximadamente 133.8333, lo que proporciona una idea general del
+contenido energético de los productos. Finalmente, al contar los
+cereales con al menos 2 gramos de fibra, se identifican 10 cereales,
+indicando cuántos cumplen con un contenido mínimo de fibra dietética.
+Este análisis permite comprender mejor las características nutricionales
+de los diferentes cereales del conjunto de datos.</p>
 <p><br><br><br></p>
 </div>
 </div>
