@@ -16,5 +16,11 @@ editor_options:
 
 [GitHub](https://github.com/edgar2-1)
 
-![Foto con Jason](/Users/Familia/Desktop/IMG_0452.jpg) aree
+![Foto con Jason](/Users/Familia/Desktop/IMG_0452.jpg)
+
+#Assignments <br>
+[Assignment 1](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment/Assignment1.html)
+
+[Assignment 2](https://github.com/edgar2-1/La_cava_de_edgar/blob/main/Assignment/Assignment2.html)
+
 
