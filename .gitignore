@@ -14,8 +14,7 @@
 
 # Output files from R CMD build
 /*.tar.gz
-/*.shared
-/*.taxonomy
+
 # Output files from R CMD check
 /*.Rcheck/
 
