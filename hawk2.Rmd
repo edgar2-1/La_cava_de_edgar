@@ -1,0 +1,235 @@
+---
+title: "hawk2"
+author: "Edgardo L. Rosado Ramos"
+date: "2025-09-16"
+output: html_document
+---
+
+```{r phyloseq-setup, message=FALSE, warning=FALSE}
+
+
+library(phyloseq)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+
+otu_file <- "final.opti_mcc.0.03.subsample.shared"
+tax_file <- "final.opti_mcc.0.03.cons.taxonomy"
+metadata_file <- "hawkm.design.txt"
+
+
+otu_df <- read.table(otu_file, header = TRUE, sep = "\t")
+rownames(otu_df) <- otu_df$Group
+otu_numeric_df <- otu_df[, -(1:3)]
+otu_matrix <- t(otu_numeric_df)
+
+
+
+tax_df_raw <- read.table(tax_file, header = TRUE, sep = "\t")
+tax_df_separated <- tax_df_raw %>%
+  separate(
+    col = Taxonomy, 
+    into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus"), 
+    sep = ";",
+    extra = "warn",
+    fill = "right"
+  )
+tax_df_almost_clean <- select(tax_df_separated, -7)
+tax_df_clean <- tax_df_almost_clean %>%
+   mutate(across(where(is.character), ~gsub("\\(\\d+\\)|k__|p__|c__|o__|f__|g__", "", .)))
+rownames(tax_df_clean) <- tax_df_clean$OTU
+tax_matrix <- tax_df_clean %>%
+  select(any_of(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus"))) %>%
+  as.matrix()
+
+
+metadata_df <- read.table(metadata_file, header = TRUE, sep = "\t")
+rownames(metadata_df) <- metadata_df$SampleID
+
+
+
+OTU = otu_table(otu_matrix, taxa_are_rows = TRUE)
+TAX = tax_table(tax_matrix)
+META = sample_data(metadata_df)
+
+
+valid_sample_names <- sample_names(OTU)
+META_synced <- sample_data(META)[valid_sample_names, ]
+
+otus_to_keep <- taxa_names(OTU)
+TAX_synced <- tax_table(TAX)[otus_to_keep, ]
+
+physeq_final <- phyloseq(OTU, TAX_synced, META_synced)
+
+
+# --- Part 6: Verify Your Final Object ---
+print("--- Final Phyloseq Object Created ---")
+print(physeq_final)
+# ===================================================================
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ComplexHeatmap)
+library(DESeq2)
+library(rstatix) 
+
+
+sample_type_cols <- c("Buccal"="#1f78b4", "Cloaca"="#33a02c", "Control"="#e31a1c")
+sample_type_shapes <- c("Buccal"=16, "Cloaca"=17, "Control"=15)
+
+theme_set(theme_bw())
+```
+
+## Introduction
+
+This report details the analysis of 16S rRNA gene sequencing data from Buccal, Cloaca, and Control samples collected from the Hawksbill Sea Turtle (*Eretmochelys imbricata*).
+
+---
+
+## 1. Alpha Diversity Analysis
+
+Alpha diversity measures the species richness and evenness within a single sample. Here we compare the Shannon diversity index across our three sample types.
+
+```{r alpha-diversity-plot}
+
+alpha_plot <- plot_richness(physeq_final, x = "SampleType", measures = c("Shannon")) +
+  geom_boxplot(aes(fill = SampleType), alpha = 0.7) +
+  scale_fill_manual(values = sample_type_cols, name = "Sample Type") +
+  labs(title = "Alpha Diversity (Shannon Index)", x = "Sample Type", y = "Shannon Diversity") +
+  theme(legend.position = "none")
+
+print(alpha_plot)
+```
+
+**Statistical Test:** We use the Kruskal-Wallis test to determine if the observed differences in Shannon diversity are statistically significant.
+
+```{r alpha-diversity-stats}
+alpha_data <- estimate_richness(physeq_final, measures = "Shannon")
+alpha_data$SampleType <- sample_data(physeq_final)$SampleType
+
+kruskal_test_result <- kruskal_test(data = alpha_data, Shannon ~ SampleType)
+
+knitr::kable(kruskal_test_result, caption = "Kruskal-Wallis test for Shannon Diversity")
+print(kruskal_test_result)
+```
+
+---
+
+## 2. Beta Diversity Analysis
+
+Beta diversity measures the difference in community composition between samples. We use Principal Coordinates Analysis (PCoA) on a Bray-Curtis dissimilarity matrix to visualize these differences.
+
+```{r pcoa-plot}
+pcoa_ord <- ordinate(physeq_final, method = "PCoA", distance = "bray")
+
+pcoa_plot <- plot_ordination(physeq_final, pcoa_ord, type = "samples", color = "SampleType", shape = "SampleType") +
+  geom_point(size = 4) +
+  stat_ellipse(type = "t", level = 0.95) +
+  scale_color_manual(name = "Sample Type", values = sample_type_cols) +
+  scale_shape_manual(name = "Sample Type", values = sample_type_shapes) +
+  labs(title = "PCoA of E. imbricata Microbial Communities",
+       subtitle = "Bray-Curtis Dissimilarity")
+
+print(pcoa_plot)
+```
+
+**Statistical Test:** We use a PERMANOVA test (`adonis2`) to determine if the clustering of sample groups is statistically significant.
+
+```{r beta-diversity-stats, results='asis'}
+bray_dist <- phyloseq::distance(physeq_final, method = "bray")
+sample_df <- data.frame(sample_data(physeq_final))
+
+permanova_result <- adonis2(bray_dist ~ SampleType, data = sample_df, permutations = 999)
+
+knitr::kable(permanova_result, caption = "PERMANOVA results for Beta Diversity")
+print(permanova_result)
+```
+
+---
+
+## 3. Taxonomic Composition
+
+### Relative Abundance Bar Plot
+This plot shows the relative abundance of the major bacterial Phyla across each sample.
+
+```{r bar-plot}
+physeq_phylum <- tax_glom(physeq_final, taxrank = "Phylum")
+
+bar_plot <- plot_bar(physeq_phylum, x = "SampleID", fill = "Phylum") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  labs(title = "Relative Abundance by Phylum", x = "Sample", y = "Relative Abundance") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8))
+
+print(bar_plot)
+```
+
+### Heatmap of Abundant Genera
+This heatmap shows the relative abundance of the top 30 most abundant genera.
+
+```{r heatmap}
+physeq_genus <- tax_glom(physeq_final, taxrank = "Genus", NArm = FALSE)
+
+top30_taxa <- names(sort(taxa_sums(physeq_genus), decreasing = TRUE)[1:30])
+physeq_top30 <- prune_taxa(top30_taxa, physeq_genus)
+
+plot_heatmap(physeq_top30, 
+             sample.label = "SampleType", 
+             taxa.label = "Genus", 
+             sample.order = "SampleType",
+             low = "#FFFFFF", high = "#0000FF", na.value = "white",
+             title = "Heatmap of Top 30 Most Abundant Genera")
+```
+
+---
+
+## 4. Differential Abundance Analysis (DESeq2)
+To identify which specific taxa are significantly different between groups, we use DESeq2.
+**Note:** DESeq2 should ideally be run on non-rarefied data. This example uses your rarefied data for demonstration.
+
+```{r deseq2-analysis}
+# Add 1 to all counts to handle zeros, a requirement for DESeq2
+physeq_deseq <- physeq_final
+otu_table(physeq_deseq) <- otu_table(physeq_deseq) + 1
+
+# Convert phyloseq object to DESeq2 object
+deseq_obj <- phyloseq_to_deseq2(physeq_deseq, design = ~ SampleType)
+
+# Run DESeq2
+deseq_results <- DESeq(deseq_obj, test = "Wald", fitType = "parametric")
+
+# --- Compare Buccal vs. Control ---
+res_buccal_vs_control <- results(deseq_results, contrast = c("SampleType", "Buccal", "Control"))
+res_buccal_vs_control_sig <- subset(res_buccal_vs_control, padj < 0.05)
+res_buccal_vs_control_sig <- cbind(as.data.frame(res_buccal_vs_control_sig), as.data.frame(tax_table(physeq_final)[rownames(res_buccal_vs_control_sig), ]))
+
+# --- Compare Cloaca vs. Control ---
+res_cloaca_vs_control <- results(deseq_results, contrast = c("SampleType", "Cloaca", "Control"))
+res_cloaca_vs_control_sig <- subset(res_cloaca_vs_control, padj < 0.05)
+res_cloaca_vs_control_sig <- cbind(as.data.frame(res_cloaca_vs_control_sig), as.data.frame(tax_table(physeq_final)[rownames(res_cloaca_vs_control_sig), ]))
+
+print("--- DESeq2 Analysis Completed ---")
+```
+
+### Table: Taxa Significantly Different Between Buccal and Control
+```{r deseq2-table-1, results='asis'}
+knitr::kable(res_buccal_vs_control_sig, caption = "Differentially abundant taxa (p-adj < 0.05) between Buccal and Control samples.")
+
+print(res_buccal_vs_control_sig)
+
+```
+
+### Table: Taxa Significantly Different Between Cloaca and Control
+```{r deseq2-table-2, results='asis'}
+knitr::kable(res_cloaca_vs_control_sig, caption = "Differentially abundant taxa (p-adj < 0.05) between Cloaca and Control samples.")
+print(res_cloaca_vs_control_sig)
+
+```
