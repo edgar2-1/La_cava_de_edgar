@@ -9,6 +9,7 @@ output:
 editor_options: 
   chunk_output_type: inline
 ---
+
 # Links
 [Statistical analysis with R](Assignments/Assignment1.html)
 
