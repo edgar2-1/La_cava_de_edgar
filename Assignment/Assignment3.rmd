@@ -1,0 +1,139 @@
+---
+title: "Assignment 3"
+author: "Edgardo L. Rosado Ramos"
+date: "2025-10-04"
+output: html_document
+---
+Instructions / Instrucciones generales
+This assignment consists of 10 questions, each worth 10 points.
+(Esta tarea consta de 10 preguntas, cada una vale 10 puntos.)
+
+Write your answers in R code chunks whenever applicable.
+(Escribe tus respuestas en chunks de R cuando sea aplicable.)
+
+Make sure your code runs without errors. Include comments if necessary.
+(Asegúrate de que tu código se ejecute sin errores. Incluye comentarios si es necesario.)
+
+Always display at least 6 rows of output for each question using head(…, 6) or more, so you can clearly see the results in your HTML file. (Siempre muestra al menos 6 filas de salida para cada pregunta usando head(…, 6) o más, para que puedas ver claramente los resultados en tu archivo HTML.)
+
+For questions about chunk options, experiment with the options and write down your observations.
+(Para preguntas sobre opciones de chunks, experimenta con ellas y escribe tus observaciones.)
+
+Submit the assignment on your personal webpages using the HTML file exported/knit from the .Rmd.
+Do not copy output screenshots unless requested.
+(Entrega la tarea en tus páginas personales usando el archivo HTML generado/kniteado desde el .Rmd.
+No copies capturas de pantalla del resultado a menos que se indique.)
+
+
+
+
+
+Install necessary packages (only run once if not installed). Instalar los paquetes necesarios (solo ejecutar una vez si no están instalados).
+```{r setup, include=FALSE}
+#install.packages("gapminder")
+# install.packages("dplyr")
+library(dplyr)
+## Warning: package 'dplyr' was built under R version 4.4.3
+library(gapminder)
+## Warning: package 'gapminder' was built under R version 4.4.3
+data(gapminder)
+head(gapminder)
+```
+## # A tibble: 6 × 6
+##   country     continent  year lifeExp      pop gdpPercap
+##   <fct>       <fct>     <int>   <dbl>    <int>     <dbl>
+## 1 Afghanistan Asia       1952    28.8  8425333      779.
+## 2 Afghanistan Asia       1957    30.3  9240934      821.
+## 3 Afghanistan Asia       1962    32.0 10267083      853.
+## 4 Afghanistan Asia       1967    34.0 11537966      836.
+## 5 Afghanistan Asia       1972    36.1 13079460      740.
+## 6 Afghanistan Asia       1977    38.4 14880372      786.
+
+
+
+
+Q1. What class is the gapminder dataset? Q1. ¿Qué clase es el dataset gapminder?
+
+tibble
+
+# Your output here 
+```{r}
+class(gapminder)
+```
+
+
+
+Q2. Filter a section of gapminder with a life expectancy smaller than 29. Q2. Filtrar una sección de gapminder con esperanza de vida menor a 29.
+
+# Your output here 
+```{r}
+head(filter(gapminder, lifeExp < 29), 6)
+```
+
+
+Q3 Filter the dataset for the country Rwanda and for years greater than 1979. Q3 Filtrar el dataset para el país Ruanda y para años mayores a 1979.
+```{r}
+
+# Your output here 
+head(filter(gapminder, country == "Rwanda" & year > 1979), 6)
+```
+
+
+Q4Create a new dataset from gapminder excluding the column gdpPercap. Q4 Crear un nuevo dataset a partir de gapminder excluyendo la columna gdpPercap.
+
+# Your output here 
+```{r}
+head(select(gapminder, -gdpPercap), 6)
+```
+
+
+Q5 Arrange the dataset in ascending order of lifeExp.Q5 Ordenar el dataset en orden ascendente según lifeExp.
+
+# Your output here 
+```{r}
+head(arrange(gapminder, lifeExp), 6)
+```
+
+
+
+Q6 Arrange the dataset in descending order of lifeExp. Q6 Ordenar el dataset en orden descendente según lifeExp.
+
+# Your output here 
+```{r}
+head(arrange(gapminder, desc(lifeExp)), 6)
+```
+
+
+
+Q7 Create a new dataset with only the columns year and lifeExp. Q7 Crear un nuevo dataset con solo las columnas year y lifeExp.
+
+# Your output here 
+```{r}
+head(select(gapminder, year, lifeExp), 6)
+```
+
+
+Q8 Filter the dataset for the country Cambodia and show only the columns year and lifeExp. Q8 Filtrar el dataset para el país Camboya y mostrar únicamente las columnas year y lifeExp.
+
+# Your output here 
+```{r}
+head(select(filter(gapminder, country == "Cambodia"), year, lifeExp), 6)
+```
+
+
+Q9. Select only the countries in Africa. Q9. Seleccionar únicamente los países que están en África.
+
+# Your output here 
+```{r}
+head(filter(gapminder, continent == "Africa"), 6)
+```
+
+
+
+Q10. Create a new column called lifeExp_months that shows life expectancy in months. Q10. Crear una nueva columna llamada lifeExp_months que muestre la esperanza de vida en meses.
+
+```{r}
+# Your output here
+head(mutate(gapminder, lifeExp_months = lifeExp * 12), 6)
+```
+
