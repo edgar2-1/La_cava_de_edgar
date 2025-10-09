@@ -27,7 +27,7 @@ editor_options:
 [Assignment 3](Assignment/Assignment3.html)
 
 
-[Practice cereal](practiceCereal.html)
+[Practice cereal](Assignment/practiceCereal.html)
 
-
+[Midterm exam](Assignment/Mid_Term_Exam.html)
 
