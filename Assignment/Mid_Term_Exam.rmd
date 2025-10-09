@@ -47,7 +47,7 @@ Sugerencia: Un día tiene 24 horas. La columna awake indica cuántas horas al d�
 msleep %>%
   mutate(percent_day_awake=(awake/24)*100) %>%
   select(everything())
-mutate
+
 ```
 
 
@@ -65,7 +65,8 @@ Sugerencia: group_by(col) agrupa las filas por tiempo, y summarise(num_storms = 
 ```{r}
 storms %>%
   group_by(year) %>%
-  summarize(num_storms=n())
+  summarize(num_storms=n()) %>%
+  arrange(desc(num_storms))
 ```
 
 Use filter() to subset storms to only storms with wind speeds greater than 50 knots, then use arrange() to sort by wind descending.

@@ -426,13 +426,6 @@ Calcula el porcentaje con (col / 24) * 100.</p>
 ## 10 Roe d… Capr… herbi Arti… lc                   3        NA        NA      21  
 ## # ℹ 73 more rows
 ## # ℹ 3 more variables: brainwt &lt;dbl&gt;, bodywt &lt;dbl&gt;, percent_day_awake &lt;dbl&gt;</code></pre>
-<pre class="r"><code>mutate</code></pre>
-<pre><code>## function (.data, ...) 
-## {
-##     UseMethod(&quot;mutate&quot;)
-## }
-## &lt;bytecode: 0x1132ecaa8&gt;
-## &lt;environment: namespace:dplyr&gt;</code></pre>
 <p>Storm tracks data (storms)</p>
 <p>Context / Contexto: You are part of a climatology research group
 analyzing storm trajectories in the Atlantic. Your team has assembled a
@@ -451,20 +444,21 @@ summarise(num_storms = n()) cuenta cuántas filas (tormentas) hay por
 año.</p>
 <pre class="r"><code>storms %&gt;%
   group_by(year) %&gt;%
-  summarize(num_storms=n())</code></pre>
+  summarize(num_storms=n()) %&gt;%
+  arrange(desc(num_storms))</code></pre>
 <pre><code>## # A tibble: 48 × 2
 ##     year num_storms
 ##    &lt;dbl&gt;      &lt;int&gt;
-##  1  1975        238
-##  2  1976        126
-##  3  1977         92
-##  4  1978        152
-##  5  1979        324
-##  6  1980        335
-##  7  1981        311
-##  8  1982        111
-##  9  1983         88
-## 10  1984        342
+##  1  2005        873
+##  2  2020        863
+##  3  1995        762
+##  4  2010        663
+##  5  2012        654
+##  6  2017        610
+##  7  2018        608
+##  8  2004        604
+##  9  2003        593
+## 10  2021        592
 ## # ℹ 38 more rows</code></pre>
 <p>Use filter() to subset storms to only storms with wind speeds greater
 than 50 knots, then use arrange() to sort by wind descending. Filtra el
