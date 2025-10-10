@@ -40,4 +40,5 @@ rsconnect/
 .DS_Store
 .quarto
 EquationCitations.csv
+*.design
 
