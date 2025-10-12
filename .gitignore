@@ -10,8 +10,8 @@
 *-Ex.R
 # Output files from R CMD build
 /*.tar.gz
-/*.taxonomy
-/*.shared
+*.taxonomy
+*.shared
 # Output files from R CMD check
 /*.Rcheck/
 # RStudio files

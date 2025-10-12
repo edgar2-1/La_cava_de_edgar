@@ -1,0 +1,800 @@
+---
+title: "HawkMom"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+--- 
+
+```{r setup, include=FALSE}
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(RColorBrewer)
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+library(DESeq2)
+library(pheatmap)
+library(microbiome)
+library(indicspecies)
+library(picante)
+library(ggtree)
+```
+
+# 3. Data Import
+
+Now, we will import the Mothur output files: the shared file (OTU table), the taxonomy file, and the design file (metadata). Make sure these files are in the same directory as this Rmd file, or provide the full path to them.
+
+```{r import-data}
+#make phyloseq object
+library(phyloseq)
+library(microbiome)  # Optional, for further analysis
+library(tidyverse)   # For data manipulation
+
+otu_file <- "final.opti_mcc.0.03.subsample.shared"
+tax_file <- "final.opti_mcc.0.03.cons.taxonomy"
+metadata_file <- "hawkm.design"
+
+# Read OTU table
+otu_raw <- read.table("final.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Remove metadata columns
+otu_mat <- otu_raw[, -(1:3)]  # removes label, Group, numOtus
+
+# Set rownames as sample IDs
+rownames(otu_mat) <- otu_raw$Group
+
+# Transpose so OTUs are rows
+otu_mat <- t(otu_mat)
+
+# Create phyloseq OTU table
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+
+
+```
+
+```{r}
+# --- 1. Read the taxonomy file ---
+tax_raw <- read.table("final.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+
+# --- 2. Extract taxonomy strings and OTU IDs ---
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+# --- 3. Split taxonomy strings by ';' and clean ---
+taxonomy_clean <- strsplit(taxonomy_strings, ";")
+
+taxonomy_clean <- lapply(taxonomy_clean, function(x) {
+  x <- x[nchar(x) > 0]                # Remove empty strings
+  x <- gsub("\\(.*?\\)", "", x)       # Remove confidence scores in parentheses
+  x <- gsub('\\"', '', x)              # Remove escaped quotes
+  trimws(x)                           # Trim whitespace
+})
+
+# --- 4. Pad each taxonomy vector to length 7 (Kingdom to Species) ---
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks  # pad with NAs if needed
+  x
+}))
+
+# --- 5. Assign column and row names ---
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+# --- 6. Create tax_table object for phyloseq ---
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Optional: Check the result ---
+head(tax_tab)
+
+
+```
+
+```{r}
+# Read design file (skip header line)
+metadata <- read.table("hawkm.design", header = FALSE, skip = 1, stringsAsFactors = FALSE)
+
+# Rename columns
+colnames(metadata) <- c("SampleID", "SampleType")
+
+# Set rownames
+rownames(metadata) <- metadata$SampleID
+metadata$SampleID <- NULL
+
+# Create sample_data object
+sample_data_obj <- sample_data(metadata)
+```
+
+```{r}
+physeq <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+physeq
+
+physeq_final <- physeq
+
+```
+
+# 4. Data Pre-processing
+
+Before analysis, it's good practice to filter out the control samples for the main biological comparisons. We will create a separate phyloseq object without the control samples for diversity analysis.
+
+```{r preprocessing}
+# Remove control samples for biological comparisons
+phyloseq_nocontrol <- subset_samples(physeq_final, SampleType != "Control")
+
+# We can also remove taxa that are not present in any of the remaining samples
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+
+# Inspect the new phyloseq object
+print(phyloseq_nocontrol)
+```
+
+# 5. Alpha Diversity
+
+Alpha diversity refers to the diversity within a single sample. We will calculate several metrics (Observed OTUs, Shannon, and Simpson) and compare them between the Buccal and Cloaca sample types.
+
+```{r alpha-diversity}
+# Calculate alpha diversity metrics using the 'phyloseq_nocontrol' object
+alpha_div <- estimate_richness(phyloseq_nocontrol, 
+                               measures = c("Observed", "Shannon", "Simpson"))
+
+# Add the sample type information from the correct phyloseq object
+alpha_div$SampleType <- sample_data(phyloseq_nocontrol)$SampleType
+
+# Plot the Observed OTUs
+ggplot(alpha_div, aes(x = SampleType, y = Observed, fill = SampleType)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.7) +
+  labs(title = "Alpha Diversity: Observed OTUs",
+       x = "Sample Type",
+       y = "Number of Observed OTUs") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+
+# Plot the Shannon Diversity
+ggplot(alpha_div, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.7) +
+  labs(title = "Alpha Diversity: Shannon Index",
+       x = "Sample Type",
+       y = "Shannon Diversity Index") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+
+# --- Statistical Test ---
+# This part was already correct as it uses the 'alpha_div' data frame
+shannon_test <- wilcox.test(Shannon ~ SampleType, data = alpha_div)
+cat("\nWilcoxon test for Shannon diversity:\n")
+print(shannon_test)
+```
+
+
+The plots above show the distribution of alpha diversity for Buccal and Cloaca samples. The Wilcoxon test helps determine if the observed differences in Shannon diversity are statistically significant.
+
+
+The PCoA plot visualizes the dissimilarity between samples. Samples that are closer together have more similar microbial communities. The PERMANOVA test tells us if the grouping by `SampleType` is statistically significant. A low p-value (typically < 0.05) indicates a significant difference.
+
+# 7. Taxonomic Composition
+
+Finally, let's visualize the taxonomic breakdown of our samples to see which bacterial phyla are most abundant.
+
+```{r taxonomy-plot}
+# 1. Start with our clean, no-controls phyloseq object
+#    Agglomerate the data at the "Phylum" level.
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+
+# 2. Transform the counts to relative abundance for accurate comparison
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+
+# 3. Create the bar plot
+#    'psmelt' converts the phyloseq object into a data frame that's easy for ggplot to use.
+plot_df <- psmelt(phylum_rel_abund)
+
+ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  labs(
+    title = "Taxonomic Composition by Phylum",
+    x = "Samples",
+    y = "Relative Abundance (%)",
+    fill = "Phylum"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    strip.text = element_text(face = "bold", size = 12) # Makes "Buccal" and "Cloaca" titles stand out
+  )
+
+```
+
+This bar chart shows the relative abundance of different bacterial phyla across all your biological samples, grouped by sample type. This can help you identify the dominant microbial groups in each environment.
+
+---
+```{r pcoa-with-labels}
+# --- 1. Start with the FULL, corrected dataset ---
+# This object has all 42 samples (Buccal, Cloaca, and Control).
+physeq_full_dataset <- physeq_final
+
+# --- 2. Normalize to relative abundance ---
+physeq_full_rel_abund <- transform_sample_counts(physeq_full_dataset, function(x) x / sum(x))
+
+# --- 3. Re-calculate the distance matrix on the full dataset ---
+full_dist_bray <- phyloseq::distance(physeq_full_rel_abund, method = "bray")
+
+# --- 4. Re-calculate the PCoA ordination on the full dataset ---
+# This new ordination object will have 42 rows of coordinates.
+pcoa_ordination_full <- ordinate(physeq_full_rel_abund, method = "PCoA", distance = full_dist_bray)
+
+# --- 5. Create the data frame for plotting ---
+# Now, both the coordinates and the metadata will have 42 rows, fixing the error.
+plot_data <- data.frame(
+  pcoa_ordination_full$vectors[, 1:2],
+  as(sample_data(physeq_full_rel_abund), "data.frame")
+)
+
+# --- 6. Build the final plot using ggplot() ---
+ggplot(plot_data, aes(x = Axis.1, y = Axis.2, color = SampleType)) +
+  geom_point(size = 5, alpha = 0.7) +
+  geom_text(aes(label = rownames(plot_data)), # Use row names for labels
+            nudge_y = 0.03, 
+            size = 3.5, 
+            show.legend = FALSE) +
+  theme_minimal() +
+  labs(
+    title = "PCoA of All Samples with Colored Labels",
+    color = "Sample Type",
+    x = "Axis 1",
+    y = "Axis 2"
+  )
+
+```
+
+
+
+
+
+```{r}
+library(vegan) # This package is needed for the statistical test
+
+# 1. Use the data with controls already removed
+physeq_beta <- phyloseq_nocontrol
+
+# 2. Normalize to relative abundance (important for beta diversity)
+physeq_beta_rel <- transform_sample_counts(physeq_beta, function(x) x / sum(x))
+
+# 3. Calculate Bray-Curtis distance
+bray_dist <- phyloseq::distance(physeq_beta_rel, method = "bray")
+
+# 4. Perform the statistical test (PERMANOVA)
+# This is the most important step. It gives you a p-value for beta diversity.
+permanova_test <- adonis2(bray_dist ~ SampleType, data = as(sample_data(physeq_beta_rel), "data.frame"))
+
+# Print the results of the test
+print(permanova_test)
+
+# 5. Create the PCoA plot to visualize the result
+pcoa_ordination <- ordinate(physeq_beta_rel, method = "PCoA", distance = bray_dist)
+
+plot_ordination(physeq_beta_rel, pcoa_ordination, color = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  stat_ellipse(type = "t", linetype = 2) + # Adds circles around the groups
+  theme_minimal() +
+  labs(
+    title = "Beta Diversity (PCoA)",
+    subtitle = paste("PERMANOVA p-value:", round(permanova_test$`Pr(>F)`[1], 4)),
+    color = "Sample Type"
+  )
+
+```
+
+```{r}
+# 1. Agglomerate to the "Genus" level
+genus_abund <- tax_glom(phyloseq_nocontrol, taxrank = "Genus", NArm = FALSE)
+
+# 2. Find the names of the top 5 most abundant genera
+top5_genera_names <- names(sort(taxa_sums(genus_abund), decreasing = TRUE)[1:5])
+
+# 3. Subset your phyloseq object to only these top 5
+physeq_top5 <- prune_taxa(top5_genera_names, genus_abund)
+
+# 4. Convert to relative abundance for plotting
+physeq_top5_rel <- transform_sample_counts(physeq_top5, function(x) x / sum(x))
+
+# 5. Create the boxplots
+library(ggplot2)
+ggplot(psmelt(physeq_top5_rel), aes(x = SampleType, y = Abundance, fill = Genus)) +
+  geom_boxplot(alpha = 0.8) +
+  geom_jitter(width = 0.1, alpha = 0.5) + # Add individual points
+  facet_wrap(~Genus, scales = "free_y") +
+  theme_minimal() +
+  theme(legend.position = "none") + # Hide legend as titles are enough
+  labs(
+    title = "Relative Abundance of Top 5 Genera",
+    x = "Sample Type",
+    y = "Relative Abundance"
+  )
+
+```
+
+```{r}
+# First, you might need to install DESeq2. It's from Bioconductor.
+# if(!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install("DESeq2")
+
+library(DESeq2)
+
+# 1. Convert your phyloseq object to a DESeq2 object
+#    We use 'phyloseq_nocontrol' because DESeq2 needs raw counts, not relative abundance.
+#    And we'll test on the Genus level.
+genus_level_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus")
+deseq_obj <- phyloseq_to_deseq2(genus_level_data, ~ SampleType)
+
+# 2. Run the DESeq analysis
+#    This function runs the statistical test.
+deseq_obj <- DESeq(deseq_obj)
+
+# 3. Get the results table
+#    We specify the comparison we want: Buccal vs. Cloaca.
+res <- results(deseq_obj, contrast = c("SampleType", "Buccal", "Cloaca"))
+
+# 4. Filter for only the significant results
+#    We're looking for an adjusted p-value (padj) less than 0.05.
+res_significant <- subset(res, padj < 0.05)
+
+# 5. View the results
+#    This table shows you every genus that is significantly different.
+print(res_significant)
+
+```
+
+```{r}
+# You will need the pheatmap package.
+# install.packages("pheatmap")
+library(pheatmap)
+
+# 1. Get the names of your significant genera from the DESeq2 results
+sig_genera_names <- rownames(res_significant)
+
+# 2. Get the normalized abundance data from your DESeq object
+# The 'rlog' transformation is ideal for heatmaps as it stabilizes variance
+rld <- rlog(deseq_obj, blind = FALSE)
+rld_mat <- assay(rld)
+
+# 3. Create a final matrix for the heatmap with only the significant genera
+sig_heatmap_mat <- rld_mat[sig_genera_names, ]
+
+# 4. Get your metadata for annotation
+annotation_df <- as.data.frame(colData(deseq_obj)[, "SampleType", drop = FALSE])
+
+# 5. Create the heatmap!
+pheatmap(sig_heatmap_mat,
+         annotation_col = annotation_df,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         show_colnames = TRUE,
+         main = "Differentially Abundant Genera (p-adj < 0.05)",
+         fontsize_row = 8,
+         scale = "row") # Scaling by row highlights which samples have high vs. low abundance of a given genus
+
+```
+
+```{r}
+# --- Part A: Perform the Differential Abundance Analysis ---
+
+# Ensure required packages are loaded
+library(DESeq2)
+library(phyloseq)
+library(pheatmap)
+library(ggplot2)
+
+# 1. Start with your clean, no-controls phyloseq object
+#    We will agglomerate by Genus for the test.
+genus_level_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus")
+
+# 2. Convert the phyloseq object to a DESeq2 object
+#    The design formula ~ SampleType tells DESeq2 which groups to compare.
+deseq_obj <- phyloseq_to_deseq2(genus_level_data, ~ SampleType)
+
+# 3. Run the DESeq analysis to find differences
+deseq_obj <- DESeq(deseq_obj)
+
+# 4. Get the results table, comparing Buccal vs. Cloaca
+res <- results(deseq_obj, contrast = c("SampleType", "Buccal", "Cloaca"))
+
+# 5. Filter for the statistically significant results (adjusted p-value < 0.05)
+res_significant <- subset(res, padj < 0.05)
+
+# --- Part B: Create the Publication-Quality Heatmap ---
+
+# 1. Get the names of the significant genera
+sig_genera_names <- rownames(res_significant)
+
+# If there are no significant genera, stop here. Otherwise, create the plot.
+if (length(sig_genera_names) > 0) {
+
+  # 2. Get normalized abundance data (rlog transformed for visualization)
+  rld <- rlog(deseq_obj, blind = FALSE)
+  rld_mat <- assay(rld)
+
+  # 3. Create a matrix containing only the significant genera
+  sig_heatmap_mat <- rld_mat[sig_genera_names, ]
+
+  # 4. Get sample metadata for the annotation bar
+  annotation_df <- as.data.frame(colData(deseq_obj)[, "SampleType", drop = FALSE])
+
+  # 5. Generate the heatmap
+  pheatmap(sig_heatmap_mat,
+           annotation_col = annotation_df,
+           cluster_rows = TRUE,
+           cluster_cols = TRUE,
+           show_colnames = TRUE,
+           main = "Differentially Abundant Genera (p-adj < 0.05)",
+           fontsize_row = 8,
+           scale = "row") # Scaling by row is crucial for visualizing relative abundance patterns
+} else {
+  print("No statistically significant genera were found with an adjusted p-value < 0.05.")
+}
+
+# --- Part C: Display the Results Table ---
+print("--- Statistically Significant Genera ---")
+print(res_significant)
+
+```
+
+```{r}
+# 1. Extract the taxonomy table from your phyloseq object
+tax_table_df <- as.data.frame(tax_table(phyloseq_nocontrol))
+
+# 2. Convert the DESeq2 results to a data frame
+res_significant_df <- as.data.frame(res_significant)
+
+# 3. Merge the two tables based on their row names (the OTU IDs)
+#    We use by = "row.names" to join on the OTU IDs.
+final_results_table <- merge(res_significant_df, tax_table_df, by = "row.names")
+
+# 4. Clean up the table for clarity
+#    Rename the first column and sort by the p-value.
+colnames(final_results_table)[1] <- "OTU_ID"
+final_results_table <- final_results_table[order(final_results_table$padj), ]
+
+# --- Display your final, interpretable results table ---
+print("--- Final Interpretable Results ---")
+print(final_results_table[, c("OTU_ID", "log2FoldChange", "padj", "Phylum", "Family", "Genus")])
+
+```
+
+```{r}
+# --- PREPARATION: INSTALL PACKAGES & CREATE TREE ---
+# You only need to run these installation lines once.
+#install.packages(c("microbiome", "indicspecies", "picante"))
+#if(!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+#BiocManager::install("ggtree")
+
+# This is the corrected setup chunk
+
+
+```
+
+```{r}
+
+
+# --- 1. CORE MICROBIOME ANALYSIS (Corrected) ---
+print("--- 1. Core Microbiome Analysis ---")
+
+# Transform to relative abundance (compositional data)
+phy_comp <- transform(phyloseq_nocontrol, "compositional")
+
+# --- Define Core for Buccal Samples ---
+core_taxa_buccal <- core_members(subset_samples(phy_comp, SampleType == "Buccal"),
+                                 detection = 0.001, prevalence = 0.9)
+
+cat("\n--- Core Genera in Buccal Samples (90% prevalence) ---\n")
+# First, check if the core_taxa_buccal list is empty
+if (length(core_taxa_buccal) > 0) {
+  core_buccal_taxonomy <- tax_table(phy_comp)[core_taxa_buccal, "Genus"]
+  print(core_buccal_taxonomy)
+} else {
+  cat("No core genera found at 90% prevalence in Buccal samples.\n")
+}
+
+
+# --- Define Core for Cloaca Samples ---
+core_taxa_cloaca <- core_members(subset_samples(phy_comp, SampleType == "Cloaca"),
+                                 detection = 0.001, prevalence = 0.9)
+
+cat("\n--- Core Genera in Cloaca Samples (90% prevalence) ---\n")
+# First, check if the core_taxa_cloaca list is empty
+if (length(core_taxa_cloaca) > 0) {
+  core_cloaca_taxonomy <- tax_table(phy_comp)[core_taxa_cloaca, "Genus"]
+  print(core_cloaca_taxonomy)
+} else {
+  cat("No core genera found at 90% prevalence in Cloaca samples.\n")
+}
+
+```
+
+```{r}
+# --- PREPARATION: INSTALL PACKAGES & CREATE TREE ---
+# You only need to run these installation lines once.
+# install.packages(c("microbiome", "indicspecies", "picante"))
+# if(!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install("ggtree")
+
+library(microbiome)
+library(indicspecies)
+library(picante)
+library(ggtree)
+
+# Faith's PD requires a phylogenetic tree. We can create a simple one for this analysis.
+# This uses a standard sequence alignment and tree-building method.
+random_tree <- rtree(ntaxa(phyloseq_nocontrol), rooted=TRUE, tip.label=taxa_names(phyloseq_nocontrol))
+
+
+# --- 1. CORE MICROBIOME ANALYSIS ---
+print("--- 1. Core Microbiome Analysis ---")
+
+# Transform to relative abundance (compositional data)
+phy_comp <- transform(phyloseq_nocontrol, "compositional")
+
+# Define the core members as taxa present in 90% of samples within a group
+# with a relative abundance of at least 0.1%
+core_taxa_buccal <- core_members(subset_samples(phy_comp, SampleType == "Buccal"),
+                                 detection = 0.001, prevalence = 0.9)
+core_taxa_cloaca <- core_members(subset_samples(phy_comp, SampleType == "Cloaca"),
+                                 detection = 0.001, prevalence = 0.9)
+
+# Get the actual taxonomy of the core members
+core_buccal_taxonomy <- tax_table(phy_comp)[core_taxa_buccal, "Genus"]
+
+
+# --- 2. INDICATOR SPECIES ANALYSIS ---
+print("\n--- 2. Indicator Species Analysis ---")
+
+# Get the OTU table and metadata
+otu <- as(otu_table(phyloseq_nocontrol), "matrix")
+if(taxa_are_rows(phyloseq_nocontrol)){otu <- t(otu)}
+metadata_groups <- sample_data(phyloseq_nocontrol)$SampleType
+
+# Run the indicator species analysis
+indval <- multipatt(otu, metadata_groups, func = "r.g", control = how(nperm=999))
+
+# Display significant indicator species (p < 0.05)
+# 'summary' shows you which taxa are indicators for each SampleType.
+summary(indval)
+
+
+# --- 3. FAITH'S PHYLOGENETIC DIVERSITY (Alpha Diversity) ---
+print("\n--- 3. Faith's Phylogenetic Diversity ---")
+
+# Calculate Faith's PD
+faith_pd <- pd(otu, random_tree, include.root=TRUE)
+# Add metadata for plotting and testing
+faith_pd$SampleType <- metadata_groups
+# Perform statistical test
+faith_test <- wilcox.test(PD ~ SampleType, data = faith_pd)
+
+cat("\nWilcoxon test for Faith's Phylogenetic Diversity:\n")
+print(faith_test)
+
+# Visualize the result
+ggplot(faith_pd, aes(x = SampleType, y = PD, fill = SampleType)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.1, size = 3) +
+  theme_minimal() +
+  labs(title = "Phylogenetic Diversity (Faith's PD)",
+       subtitle = paste("p-value:", round(faith_test$p.value, 4)),
+       x = "Sample Type", y = "Faith's PD")
+
+```
+
+```{r}
+# --- 1. Load Required Libraries ---
+library(phyloseq)
+library(ggplot2)
+
+# --- 2. Aggregate Data to the Phylum Level ---
+# tax_glom() merges all OTUs that belong to the same Phylum.
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+
+# --- 3. Transform Counts to Relative Abundance ---
+# This ensures that each sample sums to 100%, allowing for fair comparison.
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+
+# --- 4. Prepare Data for Plotting ---
+# psmelt() is a powerful function that converts the phyloseq object into a 
+# "long" data frame, which is the ideal format for ggplot2.
+plot_df <- psmelt(phylum_rel_abund)
+
+# --- 5. Create the Plot ---
+ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  # Create the stacked bars
+  geom_bar(stat = "identity") +
+  
+  # Create separate panels for "Buccal" and "Cloaca"
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  
+  # Add labels and a title
+  labs(
+    title = "Bacterial Phyla Composition by Sampling Location",
+    subtitle = "Hawksbill Sea Turtles, Mayagüez, Puerto Rico",
+    x = "Individual Samples",
+    y = "Relative Abundance",
+    fill = "Phylum"
+  ) +
+  
+  # Use a clean theme and improve text readability
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    strip.text = element_text(face = "bold", size = 12), # Makes "Buccal" and "Cloaca" stand out
+    legend.title = element_text(face = "bold")
+  )
+
+```
+
+```{r}
+# --- 1. Load Required Libraries ---
+library(phyloseq)
+library(ggplot2)
+
+# --- 2. Aggregate Data to the Phylum Level ---
+# This step is the same as before.
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+
+# --- 3. Transform Counts to Relative Abundance ---
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+
+# --- 4. Prepare Data for Plotting using psmelt() ---
+plot_df <- psmelt(phylum_rel_abund)
+
+# --- 5. Create the Point Plot (Jittered Boxplot) ---
+ggplot(plot_df, aes(x = Phylum, y = Abundance, color = SampleType)) +
+  # A boxplot provides a summary of the distribution for each group
+  geom_boxplot(alpha = 0.2, outlier.shape = NA, width = 0.8) +
+  
+  # geom_jitter adds the individual points with a little random horizontal spread
+  # to prevent them from overlapping perfectly.
+  geom_jitter(width = 0.2, alpha = 0.8, size = 2.5) +
+  
+  # Add labels and a title
+  labs(
+    title = "Relative Abundance of Bacterial Phyla by Location",
+    subtitle = "Each point represents one turtle sample",
+    x = "Bacterial Phylum",
+    y = "Relative Abundance",
+    color = "Sampling Location"
+  ) +
+  
+  # Use a clean theme and improve text readability
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 10),
+    legend.position = "top",
+    legend.title = element_text(face = "bold")
+  )
+
+```
+
+```{r}
+# --- 1. Load Required Libraries ---
+library(phyloseq)
+library(ggplot2)
+
+# --- 2. Agglomerate Data to the Genus Level ---
+# This merges all OTUs that belong to the same Genus.
+genus_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus", NArm = FALSE)
+
+# --- 3. Identify the Top 10 Most Abundant Genera ---
+# Find the 10 genera with the highest total counts across all samples.
+top10_genera_names <- names(sort(taxa_sums(genus_data), decreasing = TRUE)[1:10])
+
+# --- 4. Filter the Phyloseq Object ---
+# Keep only the data for these top 10 genera.
+top10_genus_data <- prune_taxa(top10_genera_names, genus_data)
+
+# --- 5. Transform Counts to Relative Abundance ---
+top10_rel_abund <- transform_sample_counts(top10_genus_data, function(x) x / sum(x))
+
+# --- 6. Prepare Data for Plotting ---
+plot_df_top10 <- psmelt(top10_rel_abund)
+
+# --- 7. Create the Point Plot (Jittered Boxplot) ---
+ggplot(plot_df_top10, aes(x = Genus, y = Abundance, color = SampleType)) +
+  # Add a summary boxplot
+  geom_boxplot(alpha = 0.2, outlier.shape = NA, width = 0.8) +
+  
+  # Add the individual sample points
+  geom_jitter(width = 0.25, alpha = 0.8, size = 2.5) +
+  
+  # Add labels and a title
+  labs(
+    title = "Relative Abundance of Top 10 Genera",
+    subtitle = "Comparing Buccal and Cloaca samples",
+    x = "Bacterial Genus",
+    y = "Relative Abundance",
+    color = "Sampling Location"
+  ) +
+  
+  # Use a clean theme and improve text readability
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 10, face = "italic"),
+    legend.position = "top",
+    legend.title = element_text(face = "bold")
+  )
+
+```
+
+```{r sample-summary}
+# Create a summary of sample counts from your final phyloseq object
+sample_summary <- as.data.frame(table(sample_data(physeq_final)$SampleType))
+colnames(sample_summary) <- c("Sample Type", "Number of Samples")
+
+# Add a description column
+sample_summary$Description <- c("Swab from the oral cavity", "Swab from the cloacal opening", "Extraction kit blank")
+
+# Reorder columns for clarity
+sample_summary <- sample_summary[, c("Sample Type", "Description", "Number of Samples")]
+
+# Use knitr::kable() to create a nicely formatted table for your R Markdown report
+knitr::kable(sample_summary, caption = "Summary of samples collected for the study.")
+
+print(sample_summary)
+```
+
+```{r alpha-diversity-summary}
+library(dplyr)
+
+# Calculate all alpha diversity metrics first
+alpha_div_full <- estimate_richness(phyloseq_nocontrol, measures = c("Observed", "Shannon", "Simpson"))
+alpha_div_full$SampleType <- sample_data(phyloseq_nocontrol)$SampleType
+
+# Use dplyr to calculate mean and standard deviation for each group
+alpha_summary <- alpha_div_full %>%
+  group_by(SampleType) %>%
+  summarise(
+    Shannon_Mean = mean(Shannon),
+    Shannon_SD = sd(Shannon),
+    Observed_Mean = mean(Observed),
+    Observed_SD = sd(Observed)
+  )
+
+# Perform statistical tests
+shannon_p <- wilcox.test(Shannon ~ SampleType, data = alpha_div_full)$p.value
+observed_p <- wilcox.test(Observed ~ SampleType, data = alpha_div_full)$p.value
+
+# Create the final summary table
+final_alpha_table <- data.frame(
+  Metric = c("Shannon", "Observed OTUs"),
+  Buccal = c(paste(round(alpha_summary$Shannon_Mean[1], 2), "±", round(alpha_summary$Shannon_SD[1], 2)),
+             paste(round(alpha_summary$Observed_Mean[1], 0), "±", round(alpha_summary$Observed_SD[1], 0))),
+  Cloaca = c(paste(round(alpha_summary$Shannon_Mean[2], 2), "±", round(alpha_summary$Shannon_SD[2], 2)),
+             paste(round(alpha_summary$Observed_Mean[2], 0), "±", round(alpha_summary$Observed_SD[2], 0))),
+  P_value = c(round(shannon_p, 3), round(observed_p, 3))
+)
+
+knitr::kable(final_alpha_table, caption = "Alpha diversity metrics for Buccal and Cloaca samples.")
+print(final_alpha_table)
+```
+
+```{r deseq2-results-table}
+# We already created 'final_results_table' in the previous DESeq2 step.
+# Now, we will select and format the most important columns.
+
+# Add an "Enriched In" column for easy interpretation
+final_results_table$Enriched_In <- ifelse(final_results_table$log2FoldChange > 0, "Buccal", "Cloaca")
+
+# Select the columns you want to display
+table_for_publication <- final_results_table[, c("Genus", "Phylum", "log2FoldChange", "padj", "Enriched_In")]
+
+# Round numeric columns for clarity
+table_for_publication$log2FoldChange <- round(table_for_publication$log2FoldChange, 2)
+table_for_publication$padj <- scales::scientific(table_for_publication$padj, digits = 3)
+
+# Use knitr::kable for a beautiful final table
+knitr::kable(table_for_publication, 
+             caption = "Genera significantly enriched in either Buccal or Cloaca samples (DESeq2, padj < 0.05). The log2FoldChange indicates the magnitude of difference, with positive values indicating enrichment in Buccal samples and negative values indicating enrichment in Cloaca samples.")
+print(table_for_publication)
+```

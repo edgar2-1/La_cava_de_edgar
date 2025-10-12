@@ -5,70 +5,76 @@ date: "2025-09-16"
 output: html_document
 ---
 
-```{r phyloseq-setup, message=FALSE, warning=FALSE}
-
+```{r, message=FALSE, warning=FALSE}
+setwd("~/Downloads/Project")
 
 library(phyloseq)
 library(dplyr)
 library(tidyr)
 library(tibble)
+library(tidyverse)
+```
 
+
+```{r}
+library(phyloseq)
+library(microbiome)  # Optional, for further analysis
+library(tidyverse)   # For data manipulation
 
 otu_file <- "final.opti_mcc.0.03.subsample.shared"
 tax_file <- "final.opti_mcc.0.03.cons.taxonomy"
-metadata_file <- "hawkm.design.txt"
+metadata_file <- "hawkm.design"
+# Load OTU table
+# Read the shared file using tab separator
+otu_test <- read.table(otu_file, header = TRUE, sep = "\t", check.names = FALSE)
 
 
-otu_df <- read.table(otu_file, header = TRUE, sep = "\t")
-rownames(otu_df) <- otu_df$Group
-otu_numeric_df <- otu_df[, -(1:3)]
-otu_matrix <- t(otu_numeric_df)
+head(otu_test[, 1:6])
+# Remove the 'label' and 'numOtus' columns
+otu_table_clean <- otu_table_raw[, !(colnames(otu_table_raw) %in% c("label", "numOtus"))]
+
+# Convert to matrix
+otu_mat <- as.matrix(otu_table_clean)
+
+# Create OTU table for phyloseq (samples are rows)
+otu_tab <- phyloseq::otu_table(otu_mat, taxa_are_rows = FALSE)
+
+# Load taxonomy table
+
+tax_raw <- read.table(tax_file, header = TRUE, sep = "\t", row.names = 1, fill = TRUE)
+
+# Split taxonomy strings into columns
+taxonomy_split <- strsplit(as.character(tax_raw$Taxonomy), split = ";")
+
+# Extract and clean taxonomy (remove numbers/confidence scores in parentheses)
+taxonomy_clean <- lapply(taxonomy_split, function(x) {
+  gsub("\\(.*\\)", "", x)  # Remove confidence scores
+})
+
+# Fill up to 7 ranks if necessary
+max_ranks <- max(sapply(taxonomy_clean, length))
+taxonomy_df <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks
+  return(x)
+}))
+
+colnames(taxonomy_df) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+# Create taxonomy table
+tax_mat <- as.matrix(taxonomy_df)
+tax_tab <- tax_table(tax_mat)
+
+# Load sample metadata
+
+metadata <- read.table(metadata_file, header = TRUE, row.names = 1, sep = "\t")
+sample_data_tab <- sample_data(metadata)
+
+# Create phyloseq object
+
+ps <- phyloseq(otu_tab, tax_tab, sample_data_tab)
 
 
-
-tax_df_raw <- read.table(tax_file, header = TRUE, sep = "\t")
-tax_df_separated <- tax_df_raw %>%
-  separate(
-    col = Taxonomy, 
-    into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus"), 
-    sep = ";",
-    extra = "warn",
-    fill = "right"
-  )
-tax_df_almost_clean <- select(tax_df_separated, -7)
-tax_df_clean <- tax_df_almost_clean %>%
-   mutate(across(where(is.character), ~gsub("\\(\\d+\\)|k__|p__|c__|o__|f__|g__", "", .)))
-rownames(tax_df_clean) <- tax_df_clean$OTU
-tax_matrix <- tax_df_clean %>%
-  select(any_of(c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus"))) %>%
-  as.matrix()
-
-
-metadata_df <- read.table(metadata_file, header = TRUE, sep = "\t")
-rownames(metadata_df) <- metadata_df$SampleID
-
-
-
-OTU = otu_table(otu_matrix, taxa_are_rows = TRUE)
-TAX = tax_table(tax_matrix)
-META = sample_data(metadata_df)
-
-
-valid_sample_names <- sample_names(OTU)
-META_synced <- sample_data(META)[valid_sample_names, ]
-
-otus_to_keep <- taxa_names(OTU)
-TAX_synced <- tax_table(TAX)[otus_to_keep, ]
-
-physeq_final <- phyloseq(OTU, TAX_synced, META_synced)
-
-
-# --- Part 6: Verify Your Final Object ---
-print("--- Final Phyloseq Object Created ---")
-print(physeq_final)
-# ===================================================================
 ```
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
