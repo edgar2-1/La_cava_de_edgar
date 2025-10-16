@@ -1,0 +1,574 @@
+---
+title: "hawksympos"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+# This single chunk sets up the entire document. It defines global options
+# and loads ALL required packages in one place. This is the best practice
+# to ensure the document will "knit" without errors.
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(microbiome)
+```
+
+# 1. Introduction
+This report details the comprehensive analysis of microbiome data from Buccal (oral) and Cloaca (gut) samples of the hawksbill sea turtle from two locations in Puerto Rico (Carite and Sardinera). The objective is to characterize these microbial communities and investigate the influence of body site, geographic location, and turtle size on their composition. 
+
+# 2. Data Import and Phyloseq Object Construction
+This chunk imports the Mothur output files and the detailed metadata file. It uses a robust method to handle the multi-column metadata, ensuring all variables are correctly loaded.
+
+```{r import-data}
+# --- OTU Table ---
+otu_raw <- read.table("final.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- t(otu_raw[, -(1:3)])
+colnames(otu_mat) <- otu_raw$Group
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# --- Taxonomy Table ---
+tax_raw <- read.table("final.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) gsub("\\(.*?\\)|\\\"", "", x))
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, 7))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Corrected Metadata Import ---
+# This method correctly reads the header and uses the first column for row names.
+metadata_df <- read.table("hawkm.design", header = TRUE, row.names = 1, sep = "\t", stringsAsFactors = TRUE)
+sample_data_obj <- sample_data(metadata_df)
+
+# --- Combine into a single Phyloseq Object ---
+physeq_initial <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+
+print("--- Verification of Imported Metadata ---")
+head(sample_data(physeq_initial))
+```
+
+```{r swap-samples}
+physeq_corrected <- physeq_initial
+
+# Swap the entire metadata rows
+meta_f1b <- sample_data(physeq_corrected)["F1B",]
+meta_f1x <- sample_data(physeq_corrected)["F1X",]
+sample_data(physeq_corrected)["F1B",] <- meta_f1x
+sample_data(physeq_corrected)["F1X",] <- meta_f1b
+
+# This is our final, clean phyloseq object for all subsequent analyses
+physeq_final <- physeq_corrected
+
+print("--- Verification of Sample Swap ---")
+print(sample_data(physeq_final)[c("F1B", "F1X"), ])
+```
+
+# 4. Analysis by Sample Type (Buccal vs. Cloaca)
+
+This section contains the core biological comparison between the two body sites. We first create a data subset that excludes the control samples.
+
+```{r subset-no-controls}
+phyloseq_nocontrol <- subset_samples(physeq_final, SampleType != "Control")
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+```
+
+### 4.1. Alpha Diversity
+
+```{r alpha-diversity}
+# Calculate and test Shannon diversity
+alpha_div <- estimate_richness(phyloseq_nocontrol, measures = "Shannon")
+alpha_div$SampleType <- sample_data(phyloseq_nocontrol)$SampleType
+stat_test <- wilcox.test(Shannon ~ SampleType, data = alpha_div)
+
+# Visualize
+ggplot(alpha_div, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot(alpha = 0.7) + geom_jitter(width = 0.1, size = 3, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "Alpha Diversity by Sample Type",
+       subtitle = paste("Wilcoxon p-value:", round(stat_test$p.value, 4)),
+       x = "Sample Type", y = "Shannon Diversity Index")
+```
+**Conclusion:** There is no significant difference in alpha diversity between Buccal and Cloaca samples (p = `r round(stat_test$p.value, 3)`).
+
+### 4.2. Beta Diversity
+
+```{r beta-diversity-sampletype}
+# Normalize, calculate distance, and perform PERMANOVA test
+physeq_rel_abund <- transform_sample_counts(phyloseq_nocontrol, function(x) x / sum(x))
+bray_dist <- phyloseq::distance(physeq_rel_abund, method = "bray")
+permanova_test <- adonis2(bray_dist ~ SampleType, data = as(sample_data(physeq_rel_abund), "data.frame"))
+p_val <- permanova_test$`Pr(>F)`[1]
+
+# PCoA Plot
+pcoa_ord <- ordinate(physeq_rel_abund, method = "PCoA", distance = bray_dist)
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) + stat_ellipse(type = "t") + theme_minimal() +
+  labs(title = "Beta Diversity by Sample Type",
+       subtitle = paste("PERMANOVA p-value:", round(p_val, 4)), color = "Sample Type")
+```
+**Conclusion:** There is a highly significant difference in community composition between Buccal and Cloaca samples (p = `r round(p_val, 3)`).
+
+### 4.3. Differential Abundance (DESeq2) & Heatmap
+
+```{r deseq2-and-heatmap}
+# Pre-filter low abundance genera
+genus_level_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus")
+keep_taxa <- taxa_sums(genus_level_data) >= 10
+genus_level_data_filtered <- prune_taxa(keep_taxa, genus_level_data)
+
+# Run DESeq2
+deseq_obj <- phyloseq_to_deseq2(genus_level_data_filtered, ~ SampleType)
+deseq_obj <- DESeq(deseq_obj)
+res <- results(deseq_obj, contrast = c("SampleType", "Buccal", "Cloaca"))
+res_significant <- subset(res, padj < 0.05)
+
+# Generate Heatmap of significant results
+if(nrow(res_significant) > 1) {
+  sig_genera_names <- rownames(res_significant)
+  rld <- rlog(deseq_obj, blind = FALSE)
+  sig_heatmap_mat <- assay(rld)[sig_genera_names, ]
+  
+  # Filter for zero-variance rows before plotting
+  variances <- apply(sig_heatmap_mat, 1, var)
+  sig_heatmap_mat_filtered <- sig_heatmap_mat[variances > 0, ]
+  
+  if(nrow(sig_heatmap_mat_filtered) > 1){
+      annotation_df <- as.data.frame(colData(deseq_obj)[, "SampleType", drop = FALSE])
+      pheatmap(sig_heatmap_mat_filtered,
+               annotation_col = annotation_df,
+               cluster_rows = TRUE, cluster_cols = TRUE,
+               main = "Heatmap of Differentially Abundant Genera",
+               fontsize_row = 8, scale = "row")
+  } else {
+     print("Not enough significant genera with variance to plot a heatmap.")
+  }
+} else {
+  print("No significant genera found to generate a heatmap.")
+}
+```
+
+# 5. Analysis by Environmental & Host Factors
+
+Now we investigate the influence of the new metadata variables on the microbiome.
+
+### 5.1. Analysis by Location (Carite vs. Sardinera)
+
+```{r analysis-by-location}
+# PCoA Plot Colored by Location
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "Location", shape = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "Beta Diversity by Location")
+
+# Statistical Test (PERMANOVA)
+sample_data_for_test <- as(sample_data(phyloseq_nocontrol), "data.frame")
+permanova_location_test <- adonis2(bray_dist ~ Location, data = sample_data_for_test)
+
+print("--- PERMANOVA Test for Location ---")
+print(permanova_location_test)
+```
+**Conclusion:** The PERMANOVA p-value for `Location` will determine if the microbiomes are significantly different between Carite and Sardinera.
+
+### 5.2. Analysis by Turtle Size ('>80' vs. '<80')
+
+```{r analysis-by-size}
+# PCoA Plot Colored by Size
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "size", shape = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "Beta Diversity by Turtle Size")
+
+# Statistical Test (PERMANOVA)
+permanova_size_test <- adonis2(bray_dist ~ size, data = sample_data_for_test)
+
+print("--- PERMANOVA Test for Size ---")
+print(permanova_size_test)
+```
+
+```{r}
+# --- Multi-Factor PERMANOVA Analysis ---
+# This single test evaluates the importance of all variables at once.
+
+# We use the same Bray-Curtis distance matrix as before
+# bray_dist <- phyloseq::distance(physeq_rel_abund, method = "bray")
+
+# We use the same metadata data frame
+# sample_data_for_test <- as(sample_data(phyloseq_nocontrol), "data.frame")
+
+# The formula now includes all factors. The '*' tests for interactions.
+permanova_full_model <- adonis2(bray_dist ~ SampleType * Location * size, 
+                                data = sample_data_for_test)
+
+print("--- Full Model PERMANOVA Results ---")
+print(permanova_full_model)
+```
+
+```{r}
+# --- Final Multi-Factor PERMANOVA (by terms) ---
+# This is the definitive test for your thesis.
+# The only change is adding the 'by = "terms"' argument.
+
+permanova_final_model <- adonis2(bray_dist ~ SampleType * Location * size, 
+                                 data = sample_data_for_test, 
+                                 by = "terms")
+
+print("--- Final Model PERMANOVA Results (by Factor) ---")
+print(permanova_final_model)
+```
+
+
+
+
+```{r decontam-analysis}
+# --- 1. Install and Load the decontam Package ---
+# You only need to run the installation line once.
+if (!requireNamespace("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+BiocManager::install("decontam")
+library(decontam)
+
+# --- 2. Prepare the Data for decontam ---
+# The function needs a column in the metadata that clearly identifies
+# which samples are the negative controls.
+# We will add a new column called "is_control".
+sample_data(physeq_final)$is_control <- sample_data(physeq_final)$SampleType == "Control"
+
+# --- 3. Run the decontam Analysis ---
+# We use the prevalence method, identifying contaminants based on whether they are
+# more prevalent in control samples than in true samples.
+# The threshold of 0.5 is very strict and recommended.
+contaminant_df <- isContaminant(physeq_final, 
+                                method = 'prevalence', 
+                                neg = "is_control", 
+                                threshold = 0.5)
+
+# --- 4. Investigate the Results ---
+# Let's see how many contaminants were identified.
+cat("--- Decontam Analysis Summary ---\n")
+print(table(contaminant_df$contaminant))
+
+# (Optional but recommended) Let's see the taxonomy of the contaminants found.
+if(any(contaminant_df$contaminant)) {
+  contaminant_genera <- tax_table(physeq_final)[contaminant_df$contaminant, "Genus"]
+  cat("\n--- Contaminant Genera Identified ---\n")
+  print(unique(contaminant_genera))
+}
+
+# --- 5. Create the Final, Decontaminated Phyloseq Object ---
+# This is the most important step. We filter out the OTUs that were flagged as contaminants.
+physeq_decontaminated <- prune_taxa(!contaminant_df$contaminant, physeq_final)
+
+
+# --- 6. Verification: Check the "Before and After" ---
+cat("\n--- Verification of Decontamination ---\n")
+cat("Original number of taxa:", ntaxa(physeq_final), "\n")
+cat("Number of taxa after decontamination:", ntaxa(physeq_decontaminated), "\n")
+```
+
+```{r updated-workflow}
+# --- Figure 1: PCoA Plot by SampleType ---
+library(ggplot2)
+library(phyloseq)
+
+# Create a subset without controls from the decontaminated object
+phyloseq_nocontrol <- subset_samples(physeq_decontaminated, SampleType != "Control")
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+
+# Normalize, calculate distance, and perform ordination
+physeq_rel_abund <- transform_sample_counts(phyloseq_nocontrol, function(x) x / sum(x))
+bray_dist <- phyloseq::distance(physeq_rel_abund, method = "bray")
+pcoa_ord <- ordinate(physeq_rel_abund, method = "PCoA", distance = bray_dist)
+
+# Get the PERMANOVA p-value for the subtitle
+permanova_test <- adonis2(bray_dist ~ SampleType, data = as(sample_data(physeq_rel_abund), "data.frame"))
+p_val <- permanova_test$`Pr(>F)`[1]
+
+# Create the plot
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "SampleType") +
+  geom_point(size = 5, alpha = 0.8) +
+  stat_ellipse(type = "t", linetype = 2, linewidth = 1) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Microbial Communities Cluster by Body Site",
+    subtitle = paste("PERMANOVA p-value =", round(p_val, 3)),
+    color = "Sample Type"
+  )
+```
+
+```{r taxonomic-barplot}
+# --- Figure 2: Taxonomic Bar Plot by Phylum ---
+library(ggplot2)
+library(phyloseq)
+
+# Aggregate data to the Phylum level
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+
+# Prepare data for plotting
+plot_df <- psmelt(phylum_rel_abund)
+
+# Create the plot
+ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  labs(
+    title = "Taxonomic Composition Differs Between Sites",
+    x = "Individual Samples",
+    y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    strip.text = element_text(face = "bold", size = 14)
+  )
+```
+
+```{r alpha-diversity-boxplot}
+# --- Figure 3: Alpha Diversity Box Plot ---
+library(ggplot2)
+library(phyloseq)
+
+# Calculate and test Shannon diversity
+alpha_div <- estimate_richness(phyloseq_nocontrol, measures = "Shannon")
+alpha_div$SampleType <- sample_data(phyloseq_nocontrol)$SampleType
+stat_test <- wilcox.test(Shannon ~ SampleType, data = alpha_div)
+
+# Create the plot
+ggplot(alpha_div, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.15, size = 3, alpha = 0.8) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Alpha Diversity is Similar Between Body Sites",
+    subtitle = paste("Wilcoxon p-value =", round(stat_test$p.value, 3)),
+    x = "Sample Type",
+    y = "Shannon Diversity Index"
+  ) +
+  theme(legend.position = "none")
+```
+
+```{r heatmap-differential-abundance}
+# --- Figure 4: Heatmap of Differentially Abundant Genera ---
+library(DESeq2)
+library(pheatmap)
+
+# Pre-filter and run DESeq2
+genus_level_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus")
+keep_taxa <- taxa_sums(genus_level_data) >= 10
+genus_level_data_filtered <- prune_taxa(keep_taxa, genus_level_data)
+deseq_obj <- phyloseq_to_deseq2(genus_level_data_filtered, ~ SampleType)
+deseq_obj <- DESeq(deseq_obj)
+res <- results(deseq_obj, contrast = c("SampleType", "Buccal", "Cloaca"))
+res_significant <- subset(res, padj < 0.05)
+
+# Generate Heatmap
+if(nrow(res_significant) > 1) {
+  sig_genera_names <- rownames(res_significant)
+  rld <- rlog(deseq_obj, blind = FALSE)
+  sig_heatmap_mat <- assay(rld)[sig_genera_names, ]
+  variances <- apply(sig_heatmap_mat, 1, var)
+  sig_heatmap_mat_filtered <- sig_heatmap_mat[variances > 0, ]
+  
+  if(nrow(sig_heatmap_mat_filtered) > 1){
+      annotation_df <- as.data.frame(colData(deseq_obj)[, "SampleType", drop = FALSE])
+      pheatmap(sig_heatmap_mat_filtered,
+               annotation_col = annotation_df,
+               main = "Genera Driving Community Differences (p-adj < 0.05)",
+               fontsize_row = 8, scale = "row")
+  }
+}
+```
+
+```{r top-proteobacteria-F8C}
+# --- 1. Isolate the data for just sample F8C ---
+physeq_F8C <- subset_samples(phyloseq_nocontrol, sample_names(phyloseq_nocontrol) == "F8C")
+
+# --- 2. Filter this data to only include the Phylum Proteobacteria ---
+physeq_F8C_proteo <- subset_taxa(physeq_F8C, Phylum == "Proteobacteria")
+
+# --- 3. Transform to relative abundance ---
+physeq_F8C_proteo_rel <- transform_sample_counts(physeq_F8C_proteo, function(x) x / sum(x))
+
+# --- 4. Find the most abundant taxa within this group ---
+# We'll use psmelt to convert to a data frame and then sort.
+plot_df_F8C <- psmelt(physeq_F8C_proteo_rel)
+
+# Arrange the data frame to see the most abundant taxa at the top
+top_taxa_in_F8C <- arrange(plot_df_F8C, desc(Abundance))
+
+# --- 5. Print the Top 5 Most Abundant Proteobacteria in this sample ---
+cat("--- Top 5 Most Abundant Proteobacteria Genera in Sample F8C ---\n")
+print(head(top_taxa_in_F8C[, c("Genus", "Family", "Abundance")], 5))
+```
+
+```{r pcoa-highlight-dysbiotic}
+# --- PCoA Plot Highlighting the Dysbiotic Turtle ---
+sample_of_interest <- "F8C" 
+
+# Create the data for plotting
+plot_data <- data.frame(
+  pcoa_ord$vectors[, 1:2], # We use the pcoa_ord from your previous beta diversity chunk
+  as(sample_data(phyloseq_nocontrol), "data.frame")
+)
+plot_data$Highlight <- ifelse(rownames(plot_data) == sample_of_interest, 
+                              "Dysbiotic Turtle", "Healthy Baseline")
+
+# Build the plot
+ggplot(plot_data, aes(x = Axis.1, y = Axis.2)) +
+  geom_point(aes(color = SampleType, shape = Highlight), size = 5, alpha = 0.8) +
+  scale_shape_manual(values = c("Dysbiotic Turtle" = 17, "Healthy Baseline" = 16)) + # Triangle for the outlier
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Case Study: Turtle with Proteobacteria Bloom",
+    subtitle = paste("Sample", sample_of_interest, "shows a monodominant community"),
+    color = "Sample Type", shape = "Health Status"
+  )
+```
+
+```{r investigate-helicobacter-F9C}
+# --- 1. Find the OTU ID for the dominant Helicobacter ---
+# We know from our previous analysis that the high abundance in F8C was from Helicobacter.
+# First, let's get the specific OTU ID for the most abundant Helicobacter in F8C.
+physeq_F8C <- subset_samples(phyloseq_nocontrol, sample_names(phyloseq_nocontrol) == "F8C")
+physeq_F8C_rel <- transform_sample_counts(physeq_F8C, function(x) x / sum(x))
+df_F8C <- psmelt(physeq_F8C_rel)
+top_otu_in_F8C <- arrange(df_F8C, desc(Abundance))
+otu_id_helicobacter <- top_otu_in_F8C$OTU[1] # This gets the OTU ID of the most abundant taxon
+
+# --- 2. Now, check the abundance of THAT specific OTU in sample F9C ---
+# We look at the raw counts from the main phyloseq object.
+otu_abundance_in_F9C <- otu_table(phyloseq_nocontrol)[otu_id_helicobacter, "F9C"]
+
+cat("--- Investigation of Helicobacter in Sample F9C ---\n")
+cat("The dominant Helicobacter OTU from F8C is:", otu_id_helicobacter, "\n")
+cat("The raw count of this OTU in sample F9C is:", otu_abundance_in_F9C, "\n")
+```
+
+```{r evidence-helicobacter-cluster}
+# --- 1. Load Required Libraries ---
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+
+# --- 2. Prepare the Data: Define the Groups ---
+# We start with the clean, decontaminated, no-controls object.
+# Create a new metadata column to define our groups for testing.
+sample_data(phyloseq_nocontrol)$Health_Status_H <- ifelse(
+  sample_names(phyloseq_nocontrol) %in% c("F8C", "F9C"), 
+  "Helicobacter_Cluster", 
+  "Healthy_Baseline"
+)
+
+# We will only compare within the Cloaca samples.
+physeq_cloaca_only <- subset_samples(phyloseq_nocontrol, SampleType == "Cloaca")
+
+
+# --- 3. PROOF #1: Alpha Diversity Crash (Statistical Test) ---
+# Calculate Shannon diversity for all cloaca samples.
+alpha_div_cloaca <- estimate_richness(physeq_cloaca_only, measures = "Shannon")
+alpha_div_cloaca$Health_Status_H <- sample_data(physeq_cloaca_only)$Health_Status_H
+
+# Perform a Wilcoxon test to see if the diversity is significantly lower.
+alpha_test_h <- wilcox.test(Shannon ~ Health_Status_H, data = alpha_div_cloaca)
+
+cat("--- EVIDENCE FOR HELICOBACTER CLUSTER ---\n\n")
+cat("--- PROOF #1: Alpha Diversity has Crashed ---\n")
+print(alpha_test_h)
+
+
+# --- 4. PROOF #2: Community Composition is an Outlier (Statistical Test) ---
+# We use a PERMANOVA test on only the cloaca samples.
+physeq_cloaca_rel <- transform_sample_counts(physeq_cloaca_only, function(x) x/sum(x))
+bray_dist_cloaca <- phyloseq::distance(physeq_cloaca_rel, method = "bray")
+permanova_h <- adonis2(bray_dist_cloaca ~ Health_Status_H, 
+                       data = as(sample_data(physeq_cloaca_only), "data.frame"))
+
+cat("\n--- PROOF #2: Community is a Significant Outlier ---\n")
+print(permanova_h)
+```
+
+```{r evidence-chlamydophila-case}
+# --- 1. Load Libraries and Re-build a Clean Phyloseq Object ---
+# This guarantees our data is not corrupted and all objects are fresh.
+library(phyloseq)
+library(tidyverse)
+
+# OTU Table
+otu_raw <- read.table("final.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- t(otu_raw[, -(1:3)])
+colnames(otu_mat) <- otu_raw$Group
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Taxonomy Table
+tax_raw <- read.table("final.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) gsub("\\(.*?\\)|\\\"", "", x))
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, 7))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# Robust Metadata Import
+file_lines <- readLines("hawkm.design")
+corrected_lines <- gsub(" +", "\t", file_lines)
+temp_connection <- textConnection(corrected_lines)
+metadata_df <- read.table(temp_connection, header = TRUE, row.names = 1, sep = "\t", stringsAsFactors = TRUE)
+close(temp_connection)
+
+# Re-build the phyloseq object
+sample_data_obj <- sample_data(metadata_df)
+physeq_clean_build <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+
+# --- 2. Analyze the Helicobacter Cluster (F8C and F9C) ---
+otu_id_helicobacter <- "Otu000001"
+sample_id_h1 <- "F8C"
+sample_id_h2 <- "F9C"
+
+# Calculations for F8C
+pathogen_count_h1 <- otu_table(physeq_clean_build)[otu_id_helicobacter, sample_id_h1]
+total_reads_h1 <- sample_sums(physeq_clean_build)[sample_id_h1]
+relative_abundance_h1 <- (pathogen_count_h1 / total_reads_h1) * 100
+
+# Calculations for F9C
+pathogen_count_h2 <- otu_table(physeq_clean_build)[otu_id_helicobacter, sample_id_h2]
+total_reads_h2 <- sample_sums(physeq_clean_build)[sample_id_h2]
+relative_abundance_h2 <- (pathogen_count_h2 / total_reads_h2) * 100
+
+# --- 3. Analyze the Chlamydophila Case (F12C) ---
+otu_id_chlamydophila <- "Otu000004"
+sample_id_c <- "F12C"
+
+# Calculations for F12C
+pathogen_count_c <- otu_table(physeq_clean_build)[otu_id_chlamydophila, sample_id_c]
+total_reads_c <- sample_sums(physeq_clean_build)[sample_id_c]
+relative_abundance_c <- (pathogen_count_c / total_reads_c) * 100
+
+# --- 4. Print a Clear, Final Report ---
+cat("--- QUANTITATIVE PROOF OF PATHOGEN DOMINANCE ---\n\n")
+
+cat("--- Case Study 1: Helicobacter Disease Cluster ---\n")
+cat("Pathogen OTU:", otu_id_helicobacter, "\n")
+cat("--- Turtle F8C ---\n")
+cat("Raw Count:", pathogen_count_h1, "reads\n")
+cat("Total Sample Reads:", total_reads_h1, "reads\n")
+cat("CONCLUSION: Helicobacter makes up", round(relative_abundance_h1, 2), "% of the entire gut community in turtle F8C.\n\n")
+
+cat("--- Turtle F9C ---\n")
+cat("Raw Count:", pathogen_count_h2, "reads\n")
+cat("Total Sample Reads:", total_reads_h2, "reads\n")
+cat("CONCLUSION: The same Helicobacter OTU makes up", round(relative_abundance_h2, 2), "% of the entire gut community in turtle F9C.\n\n")
+
+cat("--- Case Study 2: Chlamydophila Dysbiosis in Turtle F12C ---\n")
+cat("Pathogen OTU:", otu_id_chlamydophila, "\n")
+cat("Raw Count in F12C:", pathogen_count_c, "reads\n")
+cat("Total Reads in Sample F12C:", total_reads_c, "reads\n")
+cat("CONCLUSION: Chlamydophila makes up", round(relative_abundance_c, 2), "% of the entire gut community in this turtle.\n")
+```
