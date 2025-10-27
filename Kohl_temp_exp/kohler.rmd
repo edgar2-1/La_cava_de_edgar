@@ -1,0 +1,472 @@
+---
+title: "kohlerdata"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+# This single chunk sets up the entire document. It defines global options
+# and loads ALL required packages in one place. This is the best practice
+# to ensure the document will "knit" without errors.
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(RColorBrewer)
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+library(DESeq2)
+library(pheatmap)
+library(microbiome)
+library(indicspecies)
+library(picante)
+library(ggtree)
+```
+
+# import files
+
+Now, we will import the Mothur output files: the shared file (OTU table), the taxonomy file, and the design file (metadata). Make sure these files are in the same directory as this Rmd file, or provide the full path to them.
+
+
+```{r import-data}
+#make phyloseq object
+library(phyloseq)
+library(microbiome)  # Optional, for further analysis
+library(tidyverse)   # For data manipulation
+
+otu_file <- "kohler.opti_mcc.0.03.subsample.shared"
+tax_file <- "kohler.opti_mcc.0.03.cons.taxonomy"
+metadata_file <- "kohler.design"
+
+# Read OTU table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Remove metadata columns
+otu_mat <- otu_raw[, -(1:3)]  # removes label, Group, numOtus
+
+# Set rownames as sample IDs
+rownames(otu_mat) <- otu_raw$Group
+
+# Transpose so OTUs are rows
+otu_mat <- t(otu_mat)
+
+# Create phyloseq OTU table
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Check the result
+head(otu_tab)
+```
+
+
+```{r}
+# --- 1. Read the taxonomy file ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+
+# --- 2. Extract taxonomy strings and OTU IDs ---
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+# --- 3. Split taxonomy strings by ';' and clean ---
+taxonomy_clean <- strsplit(taxonomy_strings, ";")
+
+taxonomy_clean <- lapply(taxonomy_clean, function(x) {
+  x <- x[nchar(x) > 0]                # Remove empty strings
+  x <- gsub("\\(.*?\\)", "", x)       # Remove confidence scores in parentheses
+  x <- gsub('\\"', '', x)              # Remove escaped quotes
+  trimws(x)                           # Trim whitespace
+})
+
+# --- 4. Pad each taxonomy vector to length 7 (Kingdom to Species) ---
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks  # pad with NAs if needed
+  x
+}))
+
+# --- 5. Assign column and row names ---
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+# --- 6. Create tax_table object for phyloseq ---
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Optional: Check the result ---
+head(tax_tab)
+```
+
+```{r}
+# Load the phyloseq package (necessary for the sample_data function later)
+library(phyloseq)
+
+# Read the tab-separated design file
+# - sep="\t" ensures tabs are used as the column delimiter
+# - skip=1 skips the header line (because header=FALSE is used)
+# - stringsAsFactors=FALSE prevents character columns from being converted to factors
+metadata <- read.table(
+    "kohler.design", 
+    header = FALSE, 
+    sep = "\t", 
+    skip = 1, 
+    stringsAsFactors = FALSE
+)
+
+# Rename the columns to match your data structure (3 columns)
+colnames(metadata) <- c("SampleID", "SampleType", "Age")
+
+# Set rownames to SampleID (crucial for phyloseq)
+rownames(metadata) <- metadata$SampleID
+
+# Remove the redundant SampleID column from the data frame
+metadata$SampleID <- NULL
+
+# Create the phyloseq 'sample_data' object
+sample_data_obj <- sample_data(metadata)
+
+# The 'sample_data_obj' is now ready to be combined with your OTU table and taxonomy.
+```
+
+```{r}
+# Combine all components into a single phyloseq object
+physeq <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+# Check the phyloseq object
+physeq
+```
+
+```{r}
+permanova_result_type <- adonis2(
+    bray_curtis_dist ~ SampleType,
+    data = as(sample_data(physeq), "data.frame"),
+    permutations = 999
+)
+
+# Perform PERMANOVA testing the effect of 'Age' on community distance
+permanova_result_age <- adonis2(
+    bray_curtis_dist ~ Age,
+    data = as(sample_data(physeq), "data.frame"),
+    permutations = 999
+)
+
+# Print results to see the R-squared and p-values
+print(permanova_result_type)
+print(permanova_result_age)
+```
+```{r}
+bray_curtis_dist <- phyloseq::distance(physeq, method = "bray")
+
+# Perform the PCoA ordination
+# 'pcoa_ordination' is the object used for plotting
+pcoa_ordination <- ordinate(physeq, method = "PCoA", distance = bray_curtis_dist)
+
+# --- 2. Plot by SampleType ---
+
+pcoa_by_sampletype <- plot_ordination(physeq, pcoa_ordination, color = "SampleType") +
+  # Add points with size 3
+  geom_point(size = 3) +
+  # Add 95% confidence ellipses for each SampleType group
+  stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = SampleType)) +
+  # Set a clear title
+  ggtitle("PCoA of Microbial Communities (Colored by SampleType)") +
+  # Use a clean theme
+  theme_bw() +
+  # Adjust legend to show all SampleType colors clearly
+  guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
+
+# Save the plot
+ggsave("pcoa_by_sampletype.png", pcoa_by_sampletype, width = 7, height = 5, units = "in")
+
+# --- 3. Plot by Age ---
+
+pcoa_by_age <- plot_ordination(physeq, pcoa_ordination, color = "Age") +
+  # Add points with size 3
+  geom_point(size = 3) +
+  # Add 95% confidence ellipses for each Age group
+  stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = Age)) +
+  # Set a clear title
+  ggtitle("PCoA of Microbial Communities (Colored by Age)") +
+  # Use a clean theme
+  theme_bw() +
+  # Adjust legend to show all Age colors clearly
+  guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
+
+# Save the plot
+ggsave("pcoa_by_age.png", pcoa_by_age, width = 8, height = 6, units = "in")
+```
+
+```{r}
+# Plot Shannon Diversity by SampleType
+p_shannon_type <- ggplot(alpha_data, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot() +
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.7) + # Add individual points
+  labs(title = "Shannon Diversity by Sample Type", y = "Shannon Index") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+print(p_shannon_type)
+```
+
+```{r}
+# Assuming 'physeq' is your complete phyloseq object
+# and 'alpha_diversity' contains your richness/diversity metrics.
+
+# 1. Extract the sample metadata into a data frame
+sample_metadata <- as.data.frame(sample_data(physeq))
+
+# 2. Ensure the row names of both data frames match (they should be SampleIDs)
+# This step is critical for a correct merge/cbind.
+stopifnot(all.equal(rownames(alpha_diversity), rownames(sample_metadata)))
+
+# 3. Combine the alpha diversity metrics with the sample metadata
+alpha_data <- cbind(alpha_diversity, sample_metadata)
+
+# --- CRITICAL STEP: Order the Age Factor Levels ---
+
+# Define the logical, chronological order for the Age categories
+age_order <- c("Fetus", "Newborn", "7+ days", "15+ days", "20+ days")
+
+# Convert the Age column to a factor with the specified order
+alpha_data$Age <- factor(alpha_data$Age, levels = age_order)
+
+# --- Plot Observed Richness by Age (Box Plot) ---
+p_observed_age <- ggplot(alpha_data, aes(x = Age, y = Observed, fill = Age)) +
+  geom_boxplot() +
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.7) +
+  labs(title = "Observed Richness by Age", y = "Observed Richness") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate axis labels
+
+print(p_observed_age)
+
+# --- Plot Observed Richness by Age (Violin Plot) ---
+p_observed_age_violin <- ggplot(alpha_data, aes(x = Age, y = Observed, fill = Age)) +
+  # Add the violin layer to show data density
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  # Overlay the boxplot summary (whiskers, median, IQR) without drawing the outliers
+  geom_boxplot(width = 0.15, outlier.shape = NA) +
+  # Add all individual data points with jitter
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.7, size = 2) +
+  labs(
+    title = "Observed Richness by Age",
+    y = "Observed Richness"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate axis labels
+
+print(p_observed_age_violin)
+```
+
+```{r}
+# Load necessary libraries (if not already loaded)
+library(phyloseq)
+library(ggplot2)
+
+# --- CRITICAL STEP: Join 'Newborn' into 'Sterile' ---
+
+# 1. Get the current sample data as a data frame
+sampledf <- data.frame(sample_data(physeq))
+
+# 2. Recode the SampleType factor: Change "Newborn" entries to "Sterile"
+# We use 'droplevels' to remove the unused "Newborn" factor level after recoding
+sampledf$SampleType <- as.character(sampledf$SampleType)
+sampledf$SampleType[sampledf$SampleType == "Newborn"] <- "Sterile"
+sampledf$SampleType <- factor(sampledf$SampleType)
+sampledf$SampleType <- droplevels(sampledf$SampleType)
+
+# 3. Update the physeq object with the new sample data
+sample_data(physeq) <- sampledf
+
+# --- Visualization Steps ---
+
+# Merge rare taxa (optional, but makes the plot cleaner)
+physeq_glom <- tax_glom(physeq, taxrank = "Phylum")
+
+# Transform counts to relative abundance for plotting
+physeq_rel_abund <- transform_sample_counts(physeq_glom, function(x) x / sum(x) )
+
+# Plot the relative abundance, grouped by the NEW SampleType
+p_bar_type <- plot_bar(physeq_rel_abund, fill = "Phylum") +
+  geom_bar(stat = "identity", position = "stack") +
+  # Group bars by the newly recoded SampleType
+  facet_wrap(~ SampleType, scales = "free_x", nrow = 1) + 
+  
+  # CHANGE COLOR SCHEME: Use a specific ColorBrewer palette (e.g., 'Set3')
+  # You can choose other palettes like 'Dark2', 'Paired', etc.
+  scale_fill_brewer(palette = "Set3") + 
+  
+  labs(y = "Relative Abundance", title = "Taxonomic Composition (Newborn merged into Sterile)") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(), 
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_text(size = 12, face = "bold") # Make facet labels easier to read
+  )
+
+print(p_bar_type)
+```
+
+```{r}
+# Filter for the top 20 most abundant genera
+top_genera <- prune_taxa(names(sort(taxa_sums(physeq), TRUE)[1:20]), physeq)
+
+# Create the heatmap
+p_heatmap <- plot_heatmap(
+    top_genera, 
+    sample.label = "SampleType", # Use SampleType as the primary sample label
+    taxa.label = "Genus",        # Label the taxa by Genus
+    trans = NULL,                # Do not transform the data
+    low = "yellow", high = "red" # Color scale
+) +
+  ggtitle("Heatmap of Top 20 Genera Abundance")
+
+print(p_heatmap)
+```
+
+```{r}
+# Load necessary libraries
+library(phyloseq)
+library(vegan)
+library(DESeq2)
+
+# --- 1A. Filtering Rare Taxa ---
+# Remove taxa not seen more than 3 times in at least 20% of the samples
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+
+# --- 1B. Rarefaction (for alpha diversity robustness) ---
+# Find the minimum library size
+min_depth <- min(sample_sums(physeq_filt))
+
+# Rarefy the filtered data to the minimum depth
+set.seed(42) # Set seed for reproducibility
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# Recalculate alpha diversity on the rarefied data
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon"))
+
+# Re-create the merged data frame for plotting (use the correctly ordered Age factor)
+alpha_data_rarefied <- data.frame(
+  alpha_diversity_rarefied,
+  as.data.frame(sample_data(physeq_rarefied))
+)
+
+# Order the Age Factor Levels for plotting
+age_order <- c("Fetus", "Newborn", "7+ days", "15+ days", "20+ days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+
+# Visualize Alpha Diversity on Rarefied Data
+p_rarefied_alpha <- ggplot(alpha_data_rarefied, aes(x = Age, y = Observed, fill = Age)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_boxplot(width = 0.15, outlier.shape = NA) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.7, size = 2) +
+  labs(title = "Observed Richness by Age (Rarefied Data)", y = "Observed Richness") +
+  theme_bw() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_rarefied_alpha)
+```
+
+```{r}
+# Calculate the distance matrix on the Rarefied data for consistency
+bray_rarefied <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# Perform PERMDISP for SampleType
+dispersion_type <- betadisper(bray_rarefied, sample_data(physeq_rarefied)$SampleType)
+print("PERMDISP for SampleType:")
+anova(dispersion_type) # Check the p-value: if it's significant (p < 0.05), dispersion differs.
+
+# Perform PERMDISP for Age
+dispersion_age <- betadisper(bray_rarefied, sample_data(physeq_rarefied)$Age)
+print("PERMDISP for Age:")
+anova(dispersion_age)
+```
+
+```{r}
+#(install.packages("FSA"))
+library(FSA)
+
+# Example: Run Kruskal-Wallis first (on Rarefied data)
+kw_test_age <- kruskal.test(Shannon ~ Age, data = alpha_data_rarefied)
+print("Kruskal-Wallis Test on Shannon by Age:")
+print(kw_test_age)
+
+# If kw_test_age$p.value < 0.05, then run Dunn's test:
+if (kw_test_age$p.value < 0.05) {
+  print("Running Dunn's Post-Hoc Test (p-value significant)...")
+  dunn_result <- dunnTest(
+    Shannon ~ Age,
+    data = alpha_data_rarefied,
+    method = "bh" # Benjamini-Hochberg p-value correction
+  )
+  print(dunn_result)
+} else {
+  print("Kruskal-Wallis was not significant. Skipping Dunn's test.")
+}
+```
+
+```{r}
+# --- Extract Results (e.g., comparing Muck vs Sterile) ---
+# Note: You need to specify the contrast based on your SampleType levels
+res <- results(diagdds, contrast = c("SampleType", "Muck", "Sterile"))
+res_ordered <- res[order(res$padj), ]
+
+# 1. Convert DESeq2 results to a data frame and filter for significant
+res_df <- as.data.frame(res_ordered)
+res_df$OTU <- rownames(res_df) # Store the rownames (OTU/ASV ID) as a column
+res_df <- res_df[!is.na(res_df$padj) & res_df$padj < 0.05, ] # Filter for significant (padj < 0.05)
+
+# 2. Extract taxonomy for the same OTUs/ASVs
+tax_df <- as.data.frame(tax_table(physeq_deseq))
+tax_df$OTU <- rownames(tax_df)
+
+# 3. MERGE taxonomy with DESeq2 results based on the shared OTU column
+# This is much safer than relying on row order/number with cbind()
+res_df_final <- merge(res_df, tax_df, by = "OTU")
+
+# --- Continue with Visualization (if results exist) ---
+if (nrow(res_df_final) > 0) {
+  # Select the top 15 most significant
+  top_res <- head(res_df_final, 15)
+  
+  # Ensure Genus is a factor ordered by Log2FoldChange for plotting
+  top_res$Genus <- factor(top_res$Genus, levels = unique(top_res$Genus[order(top_res$log2FoldChange)]))
+
+  p_deseq <- ggplot(top_res, aes(x = Genus, y = log2FoldChange, fill = log2FoldChange > 0)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    labs(
+      title = "Top Differentially Abundant Taxa (Muck vs. Sterile)",
+      y = expression(Log[2]~"Fold Change"),
+      fill = "Enriched in Muck"
+    ) +
+    theme_bw()
+
+  print(p_deseq)
+} else {
+  print("No significant differentially abundant taxa found between Muck and Sterile (padj < 0.05).")
+}
+```
+
+```{r}
+#install.packages("indicspecies")
+library(indicspecies)
+
+# 1. Prepare data (use the filtered, non-rarefied data for abundance analysis)
+OTU_matrix <- as.matrix(otu_table(physeq_filt))
+metadata <- as.data.frame(sample_data(physeq_filt))
+
+# 2. Run the IndVal analysis for SampleType
+# 'maxcomp = 1' focuses on indicators for single groups (e.g., Muck ONLY)
+set.seed(42) 
+indval_result_type <- multipatt(
+  OTU_matrix, 
+  metadata$SampleType, 
+  control = how(nperm = 999), 
+  func = "r.g", # Calculates IndVal statistic
+  max.order = 1 # Only test for single group indicators
+)
+
+# 3. View significant results (e.g., p-value < 0.05)
+summary(indval_result_type, indval = 0.5, p.val = 0.05)
+```
