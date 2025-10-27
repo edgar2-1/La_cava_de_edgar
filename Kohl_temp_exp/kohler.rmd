@@ -4,31 +4,28 @@ author: "Edgardo L. Rosado Ramos"
 date: "`r Sys.Date()`"
 output: html_document
 ---
+
 ```{r setup, include=FALSE}
-# This single chunk sets up the entire document. It defines global options
-# and loads ALL required packages in one place. This is the best practice
-# to ensure the document will "knit" without errors.
 knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
 
+library(FSA)
 library(phyloseq)
 library(ggplot2)
 library(vegan)
 library(RColorBrewer)
-library(phyloseq)
 library(tidyverse)
-library(vegan)
 library(DESeq2)
 library(pheatmap)
 library(microbiome)
 library(indicspecies)
 library(picante)
 library(ggtree)
+library(stats)
 ```
 
 # import files
 
 Now, we will import the Mothur output files: the shared file (OTU table), the taxonomy file, and the design file (metadata). Make sure these files are in the same directory as this Rmd file, or provide the full path to them.
-
 
 ```{r import-data}
 #make phyloseq object
@@ -58,7 +55,6 @@ otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
 # Check the result
 head(otu_tab)
 ```
-
 
 ```{r}
 # --- 1. Read the taxonomy file ---
@@ -135,69 +131,119 @@ physeq <- phyloseq(otu_tab, tax_tab, sample_data_obj)
 physeq
 ```
 
-```{r}
-permanova_result_type <- adonis2(
-    bray_curtis_dist ~ SampleType,
-    data = as(sample_data(physeq), "data.frame"),
-    permutations = 999
+
+```{r data-prep-rarefaction}
+
+# Load necessary libraries (if not already loaded)
+library(phyloseq)
+
+# --- 1. Filtering Rare Taxa ---
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+
+# --- 2. Rarefaction (Normalization) ---
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42) # For reproducibility
+# THIS LINE CREATES THE OBJECT:
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+```
+
+
+```{r create-alpha-data-final}
+# --- 1. Calculate Diversity (Creates alpha_diversity_rarefied) ---
+# Assuming physeq_rarefied exists from a preceding chunk
+alpha_diversity_rarefied <- estimate_richness( 
+  physeq_rarefied, 
+  measures = c("Observed", "Shannon", "Simpson")
 )
 
-# Perform PERMANOVA testing the effect of 'Age' on community distance
-permanova_result_age <- adonis2(
-    bray_curtis_dist ~ Age,
-    data = as(sample_data(physeq), "data.frame"),
-    permutations = 999
+# --- 2. Merge Diversity and Metadata (Creates alpha_data_rarefied) ---
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+
+# Check that row names match before combining
+stopifnot(all.equal(rownames(alpha_diversity_rarefied), rownames(sample_metadata_rarefied)))
+
+# DEFINES the crucial variable for plotting: alpha_data_rarefied
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied) 
+
+# --- 3. Order the Age Factor Levels ---
+age_order <- c("Fetus", "Newborn", "7+ days", "15+ days", "20+ days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+```
+
+```{r permanova-analysis}
+
+# Load vegan explicitly for adonis2 (ensures chunk runs correctly)
+library(vegan) 
+
+# 1. Calculate the Bray-Curtis distance matrix on the rarefied data
+bray_curtis_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# 2. Perform PERMANOVA testing the effect of 'SampleType'
+permanova_result_type <- adonis2(bray_curtis_dist ~ SampleType, data = as(sample_data(physeq_rarefied), "data.frame"), permutations = 999
 )
 
-# Print results to see the R-squared and p-values
+# 3. Perform PERMANOVA testing the effect of 'Age' on community distance
+permanova_result_age <- adonis2(bray_curtis_dist ~ Age,
+data = as(sample_data(physeq_rarefied), "data.frame"), permutations = 999
+)
+
+# Print results
 print(permanova_result_type)
 print(permanova_result_age)
 ```
-```{r}
-bray_curtis_dist <- phyloseq::distance(physeq, method = "bray")
 
-# Perform the PCoA ordination
-# 'pcoa_ordination' is the object used for plotting
-pcoa_ordination <- ordinate(physeq, method = "PCoA", distance = bray_curtis_dist)
+```{r pcoa-plots-final}
+
+# --- IMPORTANT: Using physeq_rarefied for consistency ---
+
+# 1. Calculate the Bray-Curtis distance matrix on the RARIFIED data
+bray_curtis_dist_rarefied <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# Perform the PCoA ordination using physeq_rarefied
+pcoa_ordination <- ordinate(physeq_rarefied, method = "PCoA", distance = bray_curtis_dist_rarefied)
 
 # --- 2. Plot by SampleType ---
 
-pcoa_by_sampletype <- plot_ordination(physeq, pcoa_ordination, color = "SampleType") +
-  # Add points with size 3
-  geom_point(size = 3) +
-  # Add 95% confidence ellipses for each SampleType group
-  stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = SampleType)) +
-  # Set a clear title
-  ggtitle("PCoA of Microbial Communities (Colored by SampleType)") +
-  # Use a clean theme
-  theme_bw() +
-  # Adjust legend to show all SampleType colors clearly
-  guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
+pcoa_by_sampletype <- plot_ordination(physeq_rarefied, pcoa_ordination, color = "SampleType") +
+    # Add points with size 3
+    geom_point(size = 3) +
+    # Add 95% confidence ellipses for each SampleType group
+    stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = SampleType)) +
+    # Set a clear title
+    ggtitle("PCoA of Microbial Communities (Colored by SampleType) - Rarefied Data") +
+    # Use a clean theme
+    theme_bw() +
+    # Adjust legend
+    guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
 
 # Save the plot
-ggsave("pcoa_by_sampletype.png", pcoa_by_sampletype, width = 7, height = 5, units = "in")
+ggsave("pcoa_by_sampletype_rarefied.png", pcoa_by_sampletype, width = 7, height = 5, units = "in")
 
 # --- 3. Plot by Age ---
 
-pcoa_by_age <- plot_ordination(physeq, pcoa_ordination, color = "Age") +
-  # Add points with size 3
-  geom_point(size = 3) +
-  # Add 95% confidence ellipses for each Age group
-  stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = Age)) +
-  # Set a clear title
-  ggtitle("PCoA of Microbial Communities (Colored by Age)") +
-  # Use a clean theme
-  theme_bw() +
-  # Adjust legend to show all Age colors clearly
-  guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
+pcoa_by_age <- plot_ordination(physeq_rarefied, pcoa_ordination, color = "Age") +
+    # Add points with size 3
+    geom_point(size = 3) +
+    # Add 95% confidence ellipses for each Age group
+    stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = Age)) +
+    # Set a clear title
+    ggtitle("PCoA of Microbial Communities (Colored by Age) - Rarefied Data") +
+    # Use a clean theme
+    theme_bw() +
+    # Adjust legend
+    guides(fill = guide_legend(override.aes = list(alpha = 0.5)))
 
 # Save the plot
-ggsave("pcoa_by_age.png", pcoa_by_age, width = 8, height = 6, units = "in")
+ggsave("pcoa_by_age_rarefied.png", pcoa_by_age, width = 8, height = 6, units = "in")
+
+print(pcoa_by_sampletype)
 ```
 
-```{r}
-# Plot Shannon Diversity by SampleType
-p_shannon_type <- ggplot(alpha_data, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+
+
+```{r plot-shannon-type}
+# Use alpha_data_rarefied for consistency with earlier steps
+p_shannon_type <- ggplot(alpha_data_rarefied, aes(x = SampleType, y = Shannon, fill = SampleType)) +
   geom_boxplot() +
   geom_point(position = position_jitter(width = 0.2), alpha = 0.7) + # Add individual points
   labs(title = "Shannon Diversity by Sample Type", y = "Shannon Index") +
@@ -207,63 +253,9 @@ p_shannon_type <- ggplot(alpha_data, aes(x = SampleType, y = Shannon, fill = Sam
 print(p_shannon_type)
 ```
 
-```{r}
-# Assuming 'physeq' is your complete phyloseq object
-# and 'alpha_diversity' contains your richness/diversity metrics.
-
-# 1. Extract the sample metadata into a data frame
-sample_metadata <- as.data.frame(sample_data(physeq))
-
-# 2. Ensure the row names of both data frames match (they should be SampleIDs)
-# This step is critical for a correct merge/cbind.
-stopifnot(all.equal(rownames(alpha_diversity), rownames(sample_metadata)))
-
-# 3. Combine the alpha diversity metrics with the sample metadata
-alpha_data <- cbind(alpha_diversity, sample_metadata)
-
-# --- CRITICAL STEP: Order the Age Factor Levels ---
-
-# Define the logical, chronological order for the Age categories
-age_order <- c("Fetus", "Newborn", "7+ days", "15+ days", "20+ days")
-
-# Convert the Age column to a factor with the specified order
-alpha_data$Age <- factor(alpha_data$Age, levels = age_order)
-
-# --- Plot Observed Richness by Age (Box Plot) ---
-p_observed_age <- ggplot(alpha_data, aes(x = Age, y = Observed, fill = Age)) +
-  geom_boxplot() +
-  geom_point(position = position_jitter(width = 0.2), alpha = 0.7) +
-  labs(title = "Observed Richness by Age", y = "Observed Richness") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate axis labels
-
-print(p_observed_age)
-
-# --- Plot Observed Richness by Age (Violin Plot) ---
-p_observed_age_violin <- ggplot(alpha_data, aes(x = Age, y = Observed, fill = Age)) +
-  # Add the violin layer to show data density
-  geom_violin(trim = FALSE, alpha = 0.5) +
-  # Overlay the boxplot summary (whiskers, median, IQR) without drawing the outliers
-  geom_boxplot(width = 0.15, outlier.shape = NA) +
-  # Add all individual data points with jitter
-  geom_point(position = position_jitter(width = 0.1), alpha = 0.7, size = 2) +
-  labs(
-    title = "Observed Richness by Age",
-    y = "Observed Richness"
-  ) +
-  theme_bw() +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate axis labels
-
-print(p_observed_age_violin)
-```
 
 ```{r}
-# Load necessary libraries (if not already loaded)
-library(phyloseq)
-library(ggplot2)
-
-# --- CRITICAL STEP: Join 'Newborn' into 'Sterile' ---
+# Load necessary libraries (if not already loaded) in 'Newborn' into 'Sterile' ---
 
 # 1. Get the current sample data as a data frame
 sampledf <- data.frame(sample_data(physeq))
@@ -325,10 +317,6 @@ print(p_heatmap)
 ```
 
 ```{r}
-# Load necessary libraries
-library(phyloseq)
-library(vegan)
-library(DESeq2)
 
 # --- 1A. Filtering Rare Taxa ---
 # Remove taxa not seen more than 3 times in at least 20% of the samples
@@ -384,7 +372,6 @@ anova(dispersion_age)
 
 ```{r}
 #(install.packages("FSA"))
-library(FSA)
 
 # Example: Run Kruskal-Wallis first (on Rarefied data)
 kw_test_age <- kruskal.test(Shannon ~ Age, data = alpha_data_rarefied)
@@ -403,6 +390,22 @@ if (kw_test_age$p.value < 0.05) {
 } else {
   print("Kruskal-Wallis was not significant. Skipping Dunn's test.")
 }
+```
+
+```{r deseq2-setup}
+# Load DESeq2 (if not already loaded in setup)
+library(DESeq2) 
+
+# Remove taxa with zero total counts for DESeq2 compatibility
+# Uses the filtered object: physeq_filt
+physeq_deseq <- prune_taxa(taxa_sums(physeq_filt) > 0, physeq_filt)
+
+# Convert phyloseq object to DESeq2 format
+# This step creates the diagdds object
+diagdds <- phyloseq_to_deseq2(physeq_deseq, ~ SampleType)
+
+# Run the DESeq2 analysis (takes a moment)
+diagdds <- DESeq(diagdds, test = "Wald", fitType = "parametric")
 ```
 
 ```{r}
@@ -449,11 +452,13 @@ if (nrow(res_df_final) > 0) {
 ```
 
 ```{r}
-#install.packages("indicspecies")
-library(indicspecies)
+# Load necessary libraries (if not already loaded)
 
-# 1. Prepare data (use the filtered, non-rarefied data for abundance analysis)
+# 1. Prepare data (CRITICAL CORRECTION: Transpose the OTU matrix)
 OTU_matrix <- as.matrix(otu_table(physeq_filt))
+# Transpose the matrix so that Taxa are rows and Samples are columns
+OTU_matrix <- t(OTU_matrix) 
+
 metadata <- as.data.frame(sample_data(physeq_filt))
 
 # 2. Run the IndVal analysis for SampleType
@@ -468,5 +473,77 @@ indval_result_type <- multipatt(
 )
 
 # 3. View significant results (e.g., p-value < 0.05)
+# Note: You can adjust the IndVal threshold (indval) and p-value threshold (p.val)
 summary(indval_result_type, indval = 0.5, p.val = 0.05)
+
+# --- BONUS: Merge and display taxonomy for significant indicators ---
+indval_summary <- summary(indval_result_type, indval = 0, p.val = 0.05)$sign
+if (!is.null(indval_summary) && nrow(indval_summary) > 0) {
+  # Merge with taxonomy table
+  indval_summary$OTU <- rownames(indval_summary)
+  tax_df <- as.data.frame(tax_table(physeq_filt))
+  tax_df$OTU <- rownames(tax_df)
+  
+  indval_final <- merge(indval_summary, tax_df, by = "OTU")
+  
+  # Print the significant indicators with taxonomy
+  print("Significant Indicator Taxa:")
+  print(indval_final[c("OTU", "Group", "stat", "p.value", "Genus", "Phylum")])
+} else {
+  print("No statistically significant indicator taxa found for single SampleType groups (p < 0.05).")
+}
+```
+
+```{r diversity-age-trend-analysis}
+
+
+# --- 1. Map Categorical Age to a Numerical Timeline ---
+
+# Define the numerical mapping for chronological order (in days, approx)
+age_map <- c(
+  "Fetus" = 0,      # Pre-birth baseline
+  "Newborn" = 1,    # Day 1
+  "7+ days" = 7,    # Approximate mid-point
+  "15+ days" = 15,  # Approximate mid-point
+  "20+ days" = 20   # Approximate mid-point
+)
+
+# Create a new numerical age column in the data frame
+# This uses the factor levels (which you have already ordered) to match the map
+alpha_data_rarefied$Age_Numerical <- age_map[as.character(alpha_data_rarefied$Age)]
+
+
+# --- 2. Statistical Test: Spearman Rank Correlation ---
+
+# Spearman correlation tests for a monotonic relationship (is the trend consistent?)
+spearman_test <- cor.test(
+  alpha_data_rarefied$Age_Numerical,
+  alpha_data_rarefied$Shannon,
+  method = "spearman"
+)
+
+print("Spearman Rank Correlation (Age vs. Shannon Diversity):")
+print(spearman_test)
+
+
+# --- 3. Visualization with Regression Line ---
+
+# Perform simple linear regression to get a line of best fit (for visualization)
+lm_model <- lm(Shannon ~ Age_Numerical, data = alpha_data_rarefied)
+
+# Create a scatter plot with the regression line
+p_trend <- ggplot(alpha_data_rarefied, aes(x = Age_Numerical, y = Shannon)) +
+  # Add individual data points, colored by the original categorical Age
+  geom_point(aes(color = Age), size = 3) +
+  # Add the linear trend line
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  
+  labs(
+    title = "Microbial Shannon Diversity Trend Over Early Life Stages",
+    x = "Approximate Age (Days)",
+    y = "Shannon Diversity Index"
+  ) +
+  theme_bw()
+
+print(p_trend)
 ```
