@@ -17,6 +17,7 @@ library(tidyverse)
 
 
 ```{r}
+#make phyloseq object
 library(phyloseq)
 library(microbiome)  # Optional, for further analysis
 library(tidyverse)   # For data manipulation
@@ -24,61 +25,421 @@ library(tidyverse)   # For data manipulation
 otu_file <- "final.opti_mcc.0.03.subsample.shared"
 tax_file <- "final.opti_mcc.0.03.cons.taxonomy"
 metadata_file <- "hawkm.design"
-# Load OTU table
-# Read the shared file using tab separator
-otu_test <- read.table(otu_file, header = TRUE, sep = "\t", check.names = FALSE)
 
+# Read OTU table
+otu_raw <- read.table("final.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 
-head(otu_test[, 1:6])
-# Remove the 'label' and 'numOtus' columns
-otu_table_clean <- otu_table_raw[, !(colnames(otu_table_raw) %in% c("label", "numOtus"))]
+# Remove metadata columns
+otu_mat <- otu_raw[, -(1:3)]  # removes label, Group, numOtus
 
-# Convert to matrix
-otu_mat <- as.matrix(otu_table_clean)
+# Set rownames as sample IDs
+rownames(otu_mat) <- otu_raw$Group
 
-# Create OTU table for phyloseq (samples are rows)
-otu_tab <- phyloseq::otu_table(otu_mat, taxa_are_rows = FALSE)
+# Transpose so OTUs are rows
+otu_mat <- t(otu_mat)
 
-# Load taxonomy table
+# Create phyloseq OTU table
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
 
-tax_raw <- read.table(tax_file, header = TRUE, sep = "\t", row.names = 1, fill = TRUE)
-
-# Split taxonomy strings into columns
-taxonomy_split <- strsplit(as.character(tax_raw$Taxonomy), split = ";")
-
-# Extract and clean taxonomy (remove numbers/confidence scores in parentheses)
-taxonomy_clean <- lapply(taxonomy_split, function(x) {
-  gsub("\\(.*\\)", "", x)  # Remove confidence scores
-})
-
-# Fill up to 7 ranks if necessary
-max_ranks <- max(sapply(taxonomy_clean, length))
-taxonomy_df <- do.call(rbind, lapply(taxonomy_clean, function(x) {
-  length(x) <- max_ranks
-  return(x)
-}))
-
-colnames(taxonomy_df) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
-
-# Create taxonomy table
-tax_mat <- as.matrix(taxonomy_df)
-tax_tab <- tax_table(tax_mat)
-
-# Load sample metadata
-
-metadata <- read.table(metadata_file, header = TRUE, row.names = 1, sep = "\t")
-sample_data_tab <- sample_data(metadata)
-
-# Create phyloseq object
-
-ps <- phyloseq(otu_tab, tax_tab, sample_data_tab)
 
 
 ```
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```{r}
+# --- 1. Read the taxonomy file ---
+tax_raw <- read.table("final.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
 
+# --- 2. Extract taxonomy strings and OTU IDs ---
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+# --- 3. Split taxonomy strings by ';' and clean ---
+taxonomy_clean <- strsplit(taxonomy_strings, ";")
+
+taxonomy_clean <- lapply(taxonomy_clean, function(x) {
+  x <- x[nchar(x) > 0]                # Remove empty strings
+  x <- gsub("\\(.*?\\)", "", x)       # Remove confidence scores in parentheses
+  x <- gsub('\\"', '', x)              # Remove escaped quotes
+  trimws(x)                           # Trim whitespace
+})
+
+# --- 4. Pad each taxonomy vector to length 7 (Kingdom to Species) ---
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks  # pad with NAs if needed
+  x
+}))
+
+# --- 5. Assign column and row names ---
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+# --- 6. Create tax_table object for phyloseq ---
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Optional: Check the result ---
+head(tax_tab)
+
+
+```
+
+```{r}
+# 1. Extract your taxonomy table into a data frame, which is easy to search
+tax_table_df <- as.data.frame(tax_table(physeq_final))
+
+# 2. Search for the specific Genus name "Chlamydophila"
+#    This creates a smaller table containing only the matching rows.
+chlamydia_result <- subset(tax_table_df, Genus == "Chlamydophila")
+
+# 3. Check the result
+if (nrow(chlamydia_result) > 0) {
+  
+  # 4. Print the full taxonomy line and the OTU ID
+  cat("Found a match for Chlamydophila!\n\n")
+  print(chlamydia_result)
+  
+  otu_id_of_chlamydia <- rownames(chlamydia_result)
+  cat("\nThe OTU ID is:", otu_id_of_chlamydia, "\n")
+  
+} else {
+  
+  cat("Could not find an exact match for the Genus 'Chlamydophila'.\n")
+  cat("Checking the Family level ('Chlamydiaceae') instead...\n")
+  
+  # --- TROUBLESHOOTING: Check the Family level ---
+  # Sometimes the classification doesn't reach the Genus level.
+  family_result <- subset(tax_table_df, Family == "Chlamydiaceae")
+  
+  if (nrow(family_result) > 0) {
+    cat("\nFound a match at the Family level:\n")
+    print(family_result)
+    cat("\nThe OTU ID(s) are:", rownames(family_result), "\n")
+  } else {
+    cat("No matches found at the Genus or Family level.\n")
+  }
+}
+```
+
+```{r}
+# Find the OTU ID for Chlamydophila in your tax_table
+otu_id_chlamydophila <- "Otu000004" # <-- Replace with the actual OTU ID
+
+# Get the abundance of just that OTU across all samples
+chlamydia_abundances <- otu_table(physeq_final)[otu_id_chlamydophila, ]
+
+# Find the sample with the highest abundance
+high_abundance_sample <- names(which.max(chlamydia_abundances))
+highest_abundance_value <- max(chlamydia_abundances)
+sample_metadata <- sample_data(physeq_final)[high_abundance_sample, ]
+cat("--- Chlamydophila Abundance Report ---\n")
+cat("The Chlamydophila OTU ID is:", otu_id_chlamydoph
+ila, "\n")
+cat("The highest abundance value is:", highest_abundance_value, "\n")
+cat("The sample with the highest Chlamydophila abundance is:", high_abundance_sample, "\n")
+cat("\nThe full metadata for this turtle is:\n")
+print(sample_metadata)
+```
+
+```{r}
+# --- Correctly Import the Multi-Column Design File ---
+
+# Define the file path
+metadata_file <- "hawkm.design"
+
+# Read the table using arguments that match your new file structure.
+# header = TRUE:       CRITICAL. This tells R that your file's first line contains column names.
+# row.names = 1:       CRITICAL. This uses the first column ("Group") as the unique row identifier.
+# sep = "\t":          IMPORTANT. This tells R that the columns are separated by TABS.
+metadata_df <- read.table(metadata_file, 
+                          header = TRUE, 
+                          row.names = 1, 
+                          sep = "\t", 
+                          stringsAsFactors = TRUE) # Good practice for categorical data
+
+# Convert the formatted data frame into a phyloseq sample_data object
+sample_data_obj <- sample_data(metadata_df)
+
+# --- Verification Step ---
+# Always check the imported data to confirm it was read correctly.
+# The output should show your new columns: SampleType, Location, and size.
+print("--- Verification: First 6 rows of imported metadata ---")
+head(sample_data_obj)
+```
+
+```{r}
+physeq <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+physeq
+
+physeq_final <- physeq
+
+```
+```{r}
+plot_bar(physeq, fill = "Phylum")
+
+physeq_filtered <- filter_taxa(physeq, function(x) sum(x > 0) > 1, prune = TRUE)
+
+plot_richness(physeq, x = "SampleType", measures = c("Shannon", "Observed"))
+
+ord <- ordinate(physeq, method = "NMDS", distance = "bray")
+plot_ordination(physeq, ord, color = "SampleType")
+
+library(ggpubr)
+```
+
+```{r}
+# Extract richness values
+richness <- estimate_richness(physeq_no_control, measures = c("Shannon", "Observed"))
+richness$SampleType <- sample_data(physeq_no_control)$SampleType
+
+# Boxplot + test
+ggboxplot(richness, x = "SampleType", y = "Shannon", add = "jitter") +
+  stat_compare_means(method = "wilcox.test")
+```
+
+```{r}
+library(phyloseq)
+
+# 1. Transform counts to relative abundance
+physeq_relabun <- transform_sample_counts(physeq, function(x) x / sum(x))
+
+# 2. Subset control samples
+control_samples <- subset_samples(physeq_relabun, SampleType == "Control")
+
+# 3. Extract OTU table from control samples (samples in columns, taxa in rows)
+control_otu <- otu_table(control_samples)
+
+# 4. Calculate average abundance of each OTU across control samples
+# Convert to matrix/data.frame for easy calculations
+control_otu_df <- as.data.frame(as.matrix(control_otu))
+avg_control_abund <- rowMeans(control_otu_df)
+
+# 5. Extract full OTU table from all samples
+all_otu <- otu_table(physeq_relabun)
+all_otu_df <- as.data.frame(as.matrix(all_otu))
+
+# 6. Subtract control average from each sample (make sure no negative values)
+corrected_otu_df <- sweep(all_otu_df, 1, avg_control_abund, FUN = "-")
+corrected_otu_df[corrected_otu_df < 0] <- 0
+
+# 7. Convert corrected OTU table back to otu_table object
+corrected_otu_table <- otu_table(as.matrix(corrected_otu_df), taxa_are_rows = TRUE)
+
+# 8. Subset to remove control samples from original phyloseq object
+physeq_no_control <- subset_samples(physeq_relabun, SampleType != "Control")
+
+# 9. Replace OTU table with corrected abundances (only for non-control samples)
+# Make sure to keep only samples present in physeq_no_control
+corrected_otu_table_no_control <- prune_samples(sample_names(physeq_no_control), corrected_otu_table)
+
+# 10. Create new phyloseq object with corrected OTU table, same sample_data and taxonomy
+physeq_corrected <- phyloseq(corrected_otu_table_no_control, 
+                            tax_table(physeq_no_control), 
+                            sample_data(physeq_no_control))
+
+# Done! You can now analyze physeq_corrected without control samples and corrected for control abundances.
+
+
+```
+
+```{r}
+library(ggplot2)
+library(phyloseq)
+
+# Subset raw counts phyloseq to remove controls
+physeq_no_control_counts <- subset_samples(physeq, SampleType != "Control")
+physeq_no_control_counts <- prune_taxa(taxa_sums(physeq_no_control_counts) > 0, physeq_no_control_counts)
+
+# Now plot richness (counts)
+alpha_plot <- plot_richness(physeq_no_control_counts, x = "SampleType", measures = c("Shannon", "Observed")) +
+  geom_boxplot(aes(fill = SampleType), alpha = 0.6, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Alpha Diversity by Sample Type",
+       x = "Sample Type",
+       y = "Diversity Index") +
+  theme_minimal()
+
+print(alpha_plot)
+
+```
+```{r}
+library(phyloseq)
+library(ggplot2)
+
+# Assuming 'physeq' is your full phyloseq object with all samples (including controls)
+
+# Calculate Bray-Curtis distance matrix on full data
+bray_dist_all <- distance(physeq, method = "bray")
+
+# Run PCoA ordination on full dataset
+pcoa_all <- ordinate(physeq, method = "PCoA", distance = bray_dist_all)
+
+# Extract ordination data for ggplot2
+ordination_df_all <- plot_ordination(physeq, pcoa_all, justDF = TRUE)
+
+# Add SampleType metadata
+ordination_df_all$SampleType <- sample_data(physeq)$SampleType
+
+# Define colors (add control color if needed)
+my_colors_all <- c("Buccal" = "#1b9e77", "Cloaca" = "#d95f02", "Control" = "#7570b3")
+
+# Plot with controls included and colored
+ggplot(ordination_df_all, aes(x = Axis.1, y = Axis.2, color = SampleType)) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_color_manual(values = my_colors_all) +
+  labs(title = "PCoA (Bray-Curtis) including Controls", x = "PC1", y = "PC2") +
+  theme_minimal()
+```
+```{r}
+# Calculate Bray-Curtis distance and PCoA ordination
+# (Your original code for this part is correct)
+bray_dist <- distance(physeq, method = "bray")
+pcoa <- ordinate(physeq, method = "PCoA", distance = bray_dist)
+
+# --- CORRECTED PART ---
+# Extract PCoA scores for the first two axes.
+# We access the ordination results directly from the 'vectors' component of the pcoa object.
+ordination_df <- as.data.frame(pcoa$vectors[, 1:2])
+
+# You can now proceed with your analysis using the 'ordination_df' data frame.
+# For example, let's look at the first few rows:
+head(ordination_df)
+
+```
+```{r}
+# Title: Publication-Ready PCoA Plot with Professional Defaults
+# Description: This script takes a phyloseq object and generates a complete
+#              PCoA plot, with pre-selected colors, shapes, and themes.
+#
+# ACTION REQUIRED:
+# 1. Make sure your phyloseq object is named 'mothur_data'.
+# 2. Find your metadata column names by running: colnames(sample_data(mothur_data))
+# 3. Replace the three placeholder variables in the ggplot section below with your actual column names.
+# --- 3. Perform Ordination ---
+bray_dist <- distance(physeq, method = "bray")
+pcoa <- ordinate(physeq, method = "PCoA", distance = bray_dist)
+
+# --- 4. Prepare Data for Plotting ---
+ordination_df <- as.data.frame(pcoa$vectors[, 1:2])
+metadata_df <- as(sample_data(physeq), "data.frame")
+plot_data <- merge(ordination_df, metadata_df, by = "row.names")
+colnames(plot_data)[1] <- "SampleID"
+
+# --- 5. Create the Final PCoA Plot ---
+# Calculate the percentage of variance explained
+variance_explained <- pcoa$values$Relative_eig[1:2] * 100
+
+# Generate the plot
+final_pcoa_plot <- ggplot(plot_data, aes(x = Axis.1, y = Axis.2)) +
+
+  # --- ACTION REQUIRED: EDIT THIS SECTION ---
+  # Replace the capitalized placeholder variables with your actual column names.
+  geom_point(aes(color = YOUR_PRIMARY_VARIABLE,   # <-- REPLACE THIS
+                 shape = YOUR_SECONDARY_VARIABLE), # <-- REPLACE THIS
+             size = 4,
+             alpha = 0.9) +
+
+  # Add the non-overlapping sample labels
+  geom_text_repel(aes(label = SampleID,
+                      color = YOUR_LABEL_VARIABLE),    # <-- REPLACE THIS
+                  size = 3.5,
+                  max.overlaps = 15,
+                  box.padding = 0.5,
+                  show.legend = FALSE) + # Hide legend for text color
+  # --- END OF ACTION REQUIRED SECTION ---
+
+  # Apply a professional, colorblind-friendly color palette
+  scale_color_brewer(palette = "Set1") +
+
+  # Manually assign a set of clear, distinct shapes
+  scale_shape_manual(values = c(16, 17, 15, 18, 8, 3)) + # Solid circle, triangle, square, diamond, etc.
+
+  # Add plot titles and axis labels
+  labs(
+    title = "PCoA of Microbial Community Structure",
+    subtitle = "Based on Bray-Curtis Dissimilarity",
+    x = paste0("Axis 1 (", round(variance_explained[1], 2), "%)"),
+    y = paste0("Axis 2 (", round(variance_explained[2], 2), "%)"),
+    color = "Primary Group", # Generic legend title
+    shape = "Secondary Group" # Generic legend title
+  ) +
+
+  # Use a clean, publication-ready theme
+  theme_bw() +
+  guides(color = guide_legend(override.aes = list(size=5)),
+         shape = guide_legend(override.aes = list(size=5))) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.title = element_text(size = 12),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 10)
+  )
+
+# --- 6. Display and Save the Plot ---
+print(final_pcoa_plot)
+
+# Save the plot as a high-resolution PNG file
+ggsave("Final_PCoA_Plot.png", plot = final_pcoa_plot, width = 11, height = 8.5, dpi = 300)
+
+cat("\nScript finished. Final PCoA plot has been generated and saved as 'Final_PCoA_Plot.png'.\n")
+
+```
+
+```{r}
+library(phyloseq)
+library(ggplot2)
+
+# Calculate Bray distance matrix
+bray_dist <- distance(physeq_corrected, method = "bray")
+
+# Perform PCoA ordination
+pcoa <- ordinate(physeq_corrected, method = "PCoA", distance = bray_dist)
+
+# Extract ordination data for ggplot2
+ordination_df <- plot_ordination(physeq_corrected, pcoa, justDF = TRUE)
+ordination_df$SampleType <- sample_data(physeq_corrected)$SampleType
+
+# Define your custom colors (change these hex codes as you want)
+my_colors <- c("Buccal" = "#1b9e77", "Cloaca" = "#d95f02", "Control" = "#7570b3")
+
+# Plot with manual colors
+ggplot(ordination_df, aes(x = Axis.1, y = Axis.2, color = SampleType)) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_color_manual(values = my_colors) +
+  labs(title = "PCoA (Bray-Curtis) of Samples", x = "PC1", y = "PC2") +
+  theme_minimal()
+
+```
+
+```{r}
+# Agglomerate taxa at Phylum level
+physeq_phylum <- tax_glom(physeq_corrected, taxrank = "Phylum")
+
+# Transform to relative abundance for plotting
+physeq_phylum_rel <- transform_sample_counts(physeq_phylum, function(x) x / sum(x))
+
+# Plot bar chart
+bar_plot <- plot_bar(physeq_phylum_rel, fill = "Phylum") +
+  facet_wrap(~ SampleType, scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Taxonomic Composition by Phylum")
+
+print(bar_plot)
+```
+
+```{r}
+plot_bar(physeq_subtracted, fill = "Phylum", facet_grid = ~SampleType)
+
+# Keep only top 20 OTUs by overall abundance (after subtraction)
+top_taxa <- names(sort(rowSums(otu_centered), decreasing = TRUE))[1:20]
+physeq_top <- prune_taxa(top_taxa, physeq_subtracted)
+
+plot_bar(physeq_top, fill = "Genus", facet_grid = ~SampleType)
+
+```
+
+```{r}
 library(phyloseq)
 library(ggplot2)
 library(dplyr)
@@ -194,6 +555,23 @@ plot_heatmap(physeq_top30,
              low = "#FFFFFF", high = "#0000FF", na.value = "white",
              title = "Heatmap of Top 30 Most Abundant Genera")
 ```
+```{r}
+# Find the OTU ID for Chlamydophila in your tax_table
+otu_id_chlamydophila <- "Otu000004" # <-- Replace with the actual OTU ID
+
+# Get the abundance of just that OTU across all samples
+chlamydia_abundances <- otu_table(physeq_final)[otu_id_chlamydophila, ]
+
+# Find the sample with the highest abundance
+high_abundance_sample <- names(which.max(chlamydia_abundances))
+
+# Get the full metadata for that specific sample
+sample_metadata <- sample_data(physeq_final)[high_abundance_sample, ]
+
+cat("The sample with the highest Chlamydophila abundance is:", high_abundance_sample, "\n")
+cat("\nThe full metadata for this turtle is:\n")
+print(sample_metadata)
+```
 
 ---
 
@@ -238,4 +616,45 @@ print(res_buccal_vs_control_sig)
 knitr::kable(res_cloaca_vs_control_sig, caption = "Differentially abundant taxa (p-adj < 0.05) between Cloaca and Control samples.")
 print(res_cloaca_vs_control_sig)
 
+```
+```{r}
+# --- Corrected Bray-Curtis Calculation ---
+
+# It's good practice to normalize to relative abundance before calculating Bray-Curtis
+physeq_rel_abund <- transform_sample_counts(physeq, function(x) x/sum(x))
+
+# The corrected function call with 'phyloseq::'
+# This tells R to use the specific version of the distance function from the phyloseq package
+bray_dist_all <- phyloseq::distance(physeq_rel_abund, method = "bray")
+
+# Now you can proceed with your ordination
+pcoa_all <- ordinate(physeq_rel_abund, method = "PCoA", distance = bray_dist_all)
+
+# And plot the result
+plot_ordination(physeq_rel_abund, pcoa_all, color = "SampleType") +
+  geom_point(size = 4, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "PCoA of All Samples (including Controls)")
+```
+
+```{r}
+# --- PCoA Plot Colored by Location ---
+# We use the 'phyloseq_nocontrol' object for biological comparisons.
+physeq_rel_abund <- transform_sample_counts(phyloseq_nocontrol, function(x) x / sum(x))
+bray_dist <- phyloseq::distance(physeq_rel_abund, method = "bray")
+pcoa_ord <- ordinate(physeq_rel_abund, method = "PCoA", distance = bray_dist)
+
+# 'plot_ordination' automatically finds the new metadata columns.
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "Location", shape = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "PCoA Plot Colored by Location")
+
+# --- Statistical Test (PERMANOVA) ---
+# This gives you a p-value for the 'Location' variable.
+sample_data_for_test <- as(sample_data(phyloseq_nocontrol), "data.frame")
+permanova_location_test <- adonis2(bray_dist ~ Location, data = sample_data_for_test)
+
+print("--- PERMANOVA Test for Location ---")
+print(permanova_location_test)
 ```

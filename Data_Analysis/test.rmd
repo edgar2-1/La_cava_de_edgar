@@ -153,6 +153,62 @@ if(nrow(res_significant) > 1) {
   print("No significant genera found to generate a heatmap.")
 }
 ```
+```{r}
+# --- 1. Load Required Libraries ---
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+
+
+# Metadata Import
+file_lines <- readLines("hawkm.design"); corrected_lines <- gsub(" +", "\t", file_lines)
+temp_connection <- textConnection(corrected_lines)
+metadata_df <- read.table(temp_connection, header = TRUE, row.names = 1, sep = "\t", stringsAsFactors = TRUE)
+close(temp_connection)
+sample_data_obj <- sample_data(metadata_df)
+# Re-build the phyloseq object
+physeq_clean_build <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+# Create subset without controls
+phyloseq_nocontrol <- subset_samples(physeq_clean_build, SampleType != "Control")
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+
+# --- 3. Prepare Data for Plotting (with "Other" category) ---
+# Aggregate data to the Phylum level and transform to relative abundance
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+plot_df <- psmelt(phylum_rel_abund)
+
+# THE CRITICAL STEP: Identify and group low-abundance phyla
+# 1. Calculate the mean abundance of each phylum
+phylum_means <- plot_df %>% group_by(Phylum) %>% summarise(Mean = mean(Abundance))
+# 2. Find the names of phyla with a mean abundance < 1%
+rare_phyla <- filter(phylum_means, Mean < 0.01)$Phylum
+# 3. Create a new column where these rare phyla are renamed to "Other"
+plot_df <- plot_df %>%
+  mutate(Phylum = if_else(Phylum %in% rare_phyla, "Other (<1%)", Phylum))
+
+# --- 4. Create the Final Plot ---
+# Now, we will have fewer categories, and the color palette will work correctly.
+ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    title = "Taxonomic Composition Differs Between Body Sites",
+    subtitle = "Relative abundance of major bacterial phyla",
+    x = "Individual Turtle Samples",
+    y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    strip.text = element_text(face = "bold", size = 16),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
 
 # 5. Analysis by Environmental & Host Factors
 
@@ -386,6 +442,74 @@ if(nrow(res_significant) > 1) {
 }
 ```
 
+```{r pie-charts}
+# We use the summary tables created in the chunk above
+buccal_summary$SampleType <- "Buccal"
+cloaca_summary$SampleType <- "Cloaca"
+combined_summary <- rbind(buccal_summary, cloaca_summary)
+
+# Generate the stacked bar chart with black divisions
+ggplot(combined_summary, aes(x = SampleType, y = TotalMeanAbundance, fill = Phylum_Grouped)) +
+  geom_bar(stat = "identity", position = "stack", color = "black") + # <-- THE CHANGE IS HERE
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Average Community Composition by Body Site",
+    x = "Sample Type",
+    y = "Mean Relative Abundance",
+    fill = "Phylum"
+  ) +
+  geom_text(aes(label = if_else(TotalMeanAbundance > 0.05, 
+                                paste0(round(TotalMeanAbundance*100), "%"), 
+                                "")), 
+            position = position_stack(vjust = 0.5), size = 4, color = "white", fontface = "bold")
+```
+```{r stacked-bar-chart}
+# --- 1. Load Libraries and Prepare Data (Self-contained) ---
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+
+
+# --- 2. Create the Pie Plot for BUCCAL Samples with Black Divisions ---
+phy_buccal <- subset_samples(phyloseq_nocontrol, SampleType == "Buccal")
+phy_buccal_glom <- tax_glom(phy_buccal, taxrank = "Phylum")
+phy_buccal_rel <- transform_sample_counts(phy_buccal_glom, function(x) x / sum(x))
+buccal_summary <- psmelt(phy_buccal_rel) %>%
+  group_by(Phylum) %>% summarise(MeanAbundance = mean(Abundance)) %>%
+  mutate(Phylum_Grouped = if_else(MeanAbundance < 0.02, "Other (<2%)", Phylum)) %>%
+  group_by(Phylum_Grouped) %>% summarise(TotalMeanAbundance = sum(MeanAbundance))
+
+pie_buccal <- ggplot(buccal_summary, aes(x = "", y = TotalMeanAbundance, fill = Phylum_Grouped)) +
+  geom_bar(stat = "identity", width = 1, color = "black") + # <-- THE CHANGE IS HERE
+  coord_polar("y", start = 0) +
+  theme_void(base_size = 14) +
+  labs(title = "Average Buccal Composition", fill = "Phylum") +
+  geom_text(aes(label = if_else(TotalMeanAbundance > 0.05, paste0(round(TotalMeanAbundance*100), "%"), "")),
+            position = position_stack(vjust = 0.5), color = "white", fontface = "bold")
+
+# --- 3. Create the Pie Plot for CLOACAL Samples with Black Divisions ---
+phy_cloaca <- subset_samples(phyloseq_nocontrol, SampleType == "Cloaca")
+phy_cloaca_glom <- tax_glom(phy_cloaca, taxrank = "Phylum")
+phy_cloaca_rel <- transform_sample_counts(phy_cloaca_glom, function(x) x / sum(x))
+cloaca_summary <- psmelt(phy_cloaca_rel) %>%
+  group_by(Phylum) %>% summarise(MeanAbundance = mean(Abundance)) %>%
+  mutate(Phylum_Grouped = if_else(MeanAbundance < 0.02, "Other (<2%)", Phylum)) %>%
+  group_by(Phylum_Grouped) %>% summarise(TotalMeanAbundance = sum(MeanAbundance))
+
+pie_cloaca <- ggplot(cloaca_summary, aes(x = "", y = TotalMeanAbundance, fill = Phylum_Grouped)) +
+  geom_bar(stat = "identity", width = 1, color = "black") + # <-- THE CHANGE IS HERE
+  coord_polar("y", start = 0) +
+  theme_void(base_size = 14) +
+  labs(title = "Average Cloacal Composition", fill = "Phylum") +
+  geom_text(aes(label = if_else(TotalMeanAbundance > 0.05, paste0(round(TotalMeanAbundance*100), "%"), "")),
+            position = position_stack(vjust = 0.5), color = "white", fontface = "bold")
+
+# --- 4. Display the Plots ---
+print(pie_buccal)
+print(pie_cloaca)
+
+```
+
 ```{r top-proteobacteria-F8C}
 # --- 1. Isolate the data for just sample F8C ---
 physeq_F8C <- subset_samples(phyloseq_nocontrol, sample_names(phyloseq_nocontrol) == "F8C")
@@ -571,4 +695,230 @@ cat("Pathogen OTU:", otu_id_chlamydophila, "\n")
 cat("Raw Count in F12C:", pathogen_count_c, "reads\n")
 cat("Total Reads in Sample F12C:", total_reads_c, "reads\n")
 cat("CONCLUSION: Chlamydophila makes up", round(relative_abundance_c, 2), "% of the entire gut community in this turtle.\n")
+```
+
+```{r pathogen-barplots}
+# --- 1. Load Libraries ---
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer) # For a nice color palette
+
+# --- 2. Define Samples and Pathogen OTUs ---
+samples_of_interest <- c("F8C", "F9C", "F12C")
+otu_id_helicobacter <- "Otu000001"
+otu_id_chlamydophila <- "Otu000004"
+
+# --- 3. Process Data for Plotting ---
+# Subset to only the samples of interest and transform to relative abundance
+physeq_pathogens <- subset_samples(physeq_clean_build, sample_names(physeq_clean_build) %in% samples_of_interest)
+physeq_pathogens_rel <- transform_sample_counts(physeq_pathogens, function(x) x / sum(x))
+
+# Melt the phyloseq object to a data frame for ggplot
+plot_df <- psmelt(physeq_pathogens_rel)
+
+# Assign a specific "Pathogen" label to the relevant OTUs for coloring
+plot_df <- plot_df %>%
+  mutate(Taxa_Group = case_when(
+    OTU == otu_id_helicobacter ~ "Dominant Helicobacter",
+    OTU == otu_id_chlamydophila ~ "Dominant Chlamydophila",
+    TRUE ~ "Other Bacteria"
+  )) %>%
+  # Optionally, reorder so the pathogen always appears on top or clearly visible
+  arrange(desc(Abundance))
+
+# --- 4. Create Individual Plots ---
+
+# Define a consistent color palette: pathogen in a bold color, others in a muted shade
+# Using the specific colors helps make the pathogen pop.
+custom_colors <- c("Dominant Helicobacter" = "darkred", 
+                   "Dominant Chlamydophila" = "darkblue", 
+                   "Other Bacteria" = "lightgray")
+
+# Plot for F8C (Helicobacter)
+plot_F8C <- ggplot(subset(plot_df, Sample == "F8C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = custom_colors, breaks = c("Dominant Helicobacter", "Other Bacteria")) +
+  labs(
+    title = paste0("Turtle F8C: Helicobacter Bloom (", round(subset(plot_df, Sample == "F8C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "%)"),
+    x = "",
+    y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+# Plot for F9C (Helicobacter)
+plot_F9C <- ggplot(subset(plot_df, Sample == "F9C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = custom_colors, breaks = c("Dominant Helicobacter", "Other Bacteria")) +
+  labs(
+    title = paste0("Turtle F9C: Helicobacter Bloom (", round(subset(plot_df, Sample == "F9C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "%)"),
+    x = "",
+    y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+# Plot for F12C (Chlamydophila)
+plot_F12C <- ggplot(subset(plot_df, Sample == "F12C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = custom_colors, breaks = c("Dominant Chlamydophila", "Other Bacteria")) +
+  labs(
+    title = paste0("Turtle F12C: Chlamydophila Bloom (", round(subset(plot_df, Sample == "F12C" & OTU == otu_id_chlamydophila)$Abundance*100, 1), "%)"),
+    x = "",
+    y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+# --- 5. Display the Plots ---
+# You'll likely want to use a package like 'patchwork' or 'cowplot' to arrange these
+# if you want them on one slide in a final document. For direct output, we'll print them sequentially.
+print(plot_F8C)
+print(plot_F9C)
+print(plot_F12C)
+```
+
+```{r}
+# --- 1. Load Libraries ---
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(patchwork) # For combining plots and creating a unified legend
+
+
+
+# --- 3. Define Samples, Pathogen OTUs, and Bang Wong Colors ---
+samples_of_interest <- c("F8C", "F9C", "F12C")
+otu_id_helicobacter <- "Otu000001"
+otu_id_chlamydophila <- "Otu000004"
+
+# Adapting the Bang Wong health_status_colors for this plot
+# Ensure consistent names for the legend
+pathogen_wong_colors <- c(
+  "Dominant Helicobacter" = "#CC79A7", # Reddish Purple for Helicobacter
+  "Dominant Chlamydophila" = "#E69F00", # Orange for Chlamydophila
+  "Other Bacteria" = "gray70" # Muted gray for background
+)
+
+
+# --- 4. Process Data for Plotting ---
+physeq_pathogens <- subset_samples(physeq_clean_build, sample_names(physeq_clean_build) %in% samples_of_interest)
+physeq_pathogens_rel <- transform_sample_counts(physeq_pathogens, function(x) x / sum(x))
+plot_df <- psmelt(physeq_pathogens_rel) %>%
+  mutate(Taxa_Group = case_when(
+    OTU == otu_id_helicobacter ~ "Dominant Helicobacter",
+    OTU == otu_id_chlamydophila ~ "Dominant Chlamydophila",
+    TRUE ~ "Other Bacteria"
+  )) %>%
+  # Arrange for consistent layering, with pathogens on top
+  arrange(Taxa_Group == "Other Bacteria", Abundance)
+
+
+# --- 5. Create Individual Plots with Thinner Bars and Consistent Legend ---
+
+# Base theme for all plots
+base_theme <- theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.margin = margin(5, 5, 5, 5)) # Add some margin for cleaner look
+
+# Plot for F8C (Helicobacter)
+plot_F8C <- ggplot(subset(plot_df, Sample == "F8C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.5) + # Thinner bars
+  scale_fill_manual(values = pathogen_wong_colors, 
+                    breaks = c("Dominant Helicobacter", "Dominant Chlamydophila", "Other Bacteria")) +
+  labs(title = paste0("Turtle F8C\n(", round(subset(plot_df, Sample == "F8C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "% Helicobacter)"),
+       x = "", y = "Relative Abundance") +
+  base_theme
+
+# Plot for F9C (Helicobacter)
+plot_F9C <- ggplot(subset(plot_df, Sample == "F9C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.5) + # Thinner bars
+  scale_fill_manual(values = pathogen_wong_colors, 
+                    breaks = c("Dominant Helicobacter", "Dominant Chlamydophila", "Other Bacteria")) +
+  labs(title = paste0("Turtle F9C\n(", round(subset(plot_df, Sample == "F9C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "% Helicobacter)"),
+       x = "", y = "") + # Remove y-axis label for middle plot to save space
+  base_theme
+
+# Plot for F12C (Chlamydophila)
+plot_F12C <- ggplot(subset(plot_df, Sample == "F12C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.5) + # Thinner bars
+  scale_fill_manual(values = pathogen_wong_colors, 
+                    breaks = c("Dominant Helicobacter", "Dominant Chlamydophila", "Other Bacteria")) +
+  labs(title = paste0("Turtle F12C\n(", round(subset(plot_df, Sample == "F12C" & OTU == otu_id_chlamydophila)$Abundance*100, 1), "% Chlamydophila)"),
+       x = "", y = "") + # Remove y-axis label for right plot to save space
+  base_theme
+
+# --- 6. Combine Plots with a Unified Legend ---
+combined_plots <- (plot_F8C + plot_F9C + plot_F12C) +
+  plot_layout(guides = "collect") + # Collect all legends into one
+  plot_annotation(title = "Figure 4: Overwhelming Dominance by Pathogens in Dysbiotic Turtles") &
+  theme(legend.position = "bottom", legend.box = "horizontal", legend.text = element_text(size=12), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 18))
+
+print(combined_plots)
+```
+
+```{r}
+# --- 1. Load Libraries and Re-build a Clean Phyloseq Object ---
+# This guarantees our data is not corrupted and all objects are fresh.
+library(phyloseq)
+library(dplyr)
+
+
+# Metadata Import
+file_lines <- readLines("hawkm.design"); corrected_lines <- gsub(" +", "\t", file_lines)
+temp_connection <- textConnection(corrected_lines)
+metadata_df <- read.table(temp_connection, header = TRUE, row.names = 1, sep = "\t", stringsAsFactors = TRUE)
+close(temp_connection)
+sample_data_obj <- sample_data(metadata_df)
+# Re-build the phyloseq object
+physeq_clean_build <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+# Create subset without controls
+phyloseq_nocontrol <- subset_samples(physeq_clean_build, SampleType != "Control")
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+
+
+# --- 2. Find Most Abundant Genus in PROTEOBACTERIA ---
+# Subset to only Proteobacteria
+phy_proteo <- subset_taxa(phyloseq_nocontrol, Phylum == "Proteobacteria")
+# Agglomerate at the Genus level
+phy_proteo_genus <- tax_glom(phy_proteo, taxrank = "Genus")
+# Find the single most abundant genus
+top_proteo_otu <- names(which.max(taxa_sums(phy_proteo_genus)))
+top_proteo_genus <- as.character(tax_table(phy_proteo_genus)[top_proteo_otu, "Genus"])
+top_proteo_abundance <- max(taxa_sums(phy_proteo_genus))
+
+
+# --- 3. Find Most Abundant Genus in CHLAMYDIAE ---
+phy_chlamy <- subset_taxa(phyloseq_nocontrol, Phylum == "Chlamydiae")
+phy_chlamy_genus <- tax_glom(phy_chlamy, taxrank = "Genus")
+top_chlamy_otu <- names(which.max(taxa_sums(phy_chlamy_genus)))
+top_chlamy_genus <- as.character(tax_table(phy_chlamy_genus)[top_chlamy_otu, "Genus"])
+top_chlamy_abundance <- max(taxa_sums(phy_chlamy_genus))
+
+
+# --- 4. Create the Final PowerPoint-Ready Table ---
+summary_table <- data.frame(
+  Phylum = c("Proteobacteria", "Chlamydiae"),
+  `Most Abundant Genus` = c(top_proteo_genus, top_chlamy_genus),
+  `Total Abundance (Reads)` = c(top_proteo_abundance, top_chlamy_abundance),
+  check.names = FALSE # Prevents R from changing column names
+)
+
+# Use knitr::kable to print a clean, copy-paste friendly table
+knitr::kable(summary_table, caption = "Most Abundant Genus within Key Phyla")
+print(summary_table)
 ```

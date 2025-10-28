@@ -1,0 +1,245 @@
+---
+title: "finish"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+---
+title: "Presentation Figures: Hawksbill Sea Turtle Microbiome"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+# This chunk sets up the document and loads ALL required packages in one place.
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.width = 10, fig.height = 7)
+
+library(phyloseq)
+library(tidyverse)
+library(vegan)
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+# 1. Setup: Defining the Wong Color Palette
+
+This chunk defines our color palette, which will be used for all subsequent plots to ensure consistency and readability.
+
+```{r define-colors}
+# The colorblind-safe palette developed by Bang Wong
+wong_palette <- c(
+  Buccal = "#0072B2",   # Blue
+  Cloaca = "#D55E00",   # Vermillion/Red-Orange
+  Control = "#009E73"    # Green
+)
+
+# A separate mapping for the health status plots
+health_status_colors <- c(
+  "Healthy Baseline" = "gray70",
+  "Helicobacter Cluster" = "#CC79A7", # Reddish Purple
+  "Chlamydophila Case" = "#E69F00"  # Orange
+)
+```
+
+# 2. Data Import and Cleaning
+
+This chunk imports all data, cleans the metadata formatting, and creates our final, clean `physeq_final` object. This is the foundation for all plots.
+
+```{r import-data}
+# --- OTU Table ---
+otu_raw <- read.table("final.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- t(otu_raw[, -(1:3)]); colnames(otu_mat) <- otu_raw$Group
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# --- Taxonomy Table ---
+tax_raw <- read.table("final.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy; names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) gsub("\\(.*?\\)|\\\"", "", x))
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, 7))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Robust Metadata Import ---
+file_lines <- readLines("hawkm.design"); corrected_lines <- gsub(" +", "\t", file_lines)
+temp_connection <- textConnection(corrected_lines)
+metadata_df <- read.table(temp_connection, header = TRUE, row.names = 1, sep = "\t", stringsAsFactors = TRUE)
+close(temp_connection)
+sample_data_obj <- sample_data(metadata_df)
+
+# --- Combine and Create Final Object ---
+physeq_initial <- phyloseq(otu_tab, tax_tab, sample_data_obj)
+physeq_final <- physeq_initial # Assuming no sample swap needed for this final run
+```
+
+# 3. Generating Presentation Figures
+
+This section creates each of the essential plots for your presentation.
+
+### Figure 1: The Main Finding - Beta Diversity by Body Site
+
+This PCoA plot is your "money chart," clearly showing the significant difference between Buccal and Cloaca communities.
+
+```{r figure1-pcoa-by-sampletype}
+# Create subset without controls
+phyloseq_nocontrol <- subset_samples(physeq_final, SampleType != "Control")
+phyloseq_nocontrol <- prune_taxa(taxa_sums(phyloseq_nocontrol) > 0, phyloseq_nocontrol)
+
+# Normalize, calculate distance, and perform ordination
+physeq_rel_abund <- transform_sample_counts(phyloseq_nocontrol, function(x) x / sum(x))
+bray_dist <- phyloseq::distance(physeq_rel_abund, method = "bray")
+pcoa_ord <- ordinate(physeq_rel_abund, method = "PCoA", distance = bray_dist)
+
+# Get the PERMANOVA p-value for the subtitle
+permanova_test <- adonis2(bray_dist ~ SampleType, data = as(sample_data(physeq_rel_abund), "data.frame"))
+p_val <- permanova_test$`Pr(>F)`[1]
+
+# Create the plot
+plot_ordination(physeq_rel_abund, pcoa_ord, color = "SampleType") +
+  geom_point(size = 5, alpha = 0.8) +
+  stat_ellipse(type = "t", linetype = 2, linewidth = 1) +
+  scale_color_manual(values = wong_palette) +
+  theme_minimal(base_size = 16) +
+  labs(
+    title = "Figure 1: Microbial Communities Cluster by Body Site",
+    subtitle = paste("PERMANOVA p-value =", round(p_val, 3)),
+    color = "Sample Type"
+  )
+```
+
+### Figure 2: The Taxonomic Overview - Phylum Composition
+
+This bar chart gives a high-level view of *who* is in each community. *Note: Since there are many phyla, we use a different, larger color palette for this plot only.*
+
+```{r figure2-taxonomic-barplot}
+# Aggregate data to the Phylum level and transform to relative abundance
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
+plot_df <- psmelt(phylum_rel_abund)
+
+# Create the plot
+ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
+  scale_fill_brewer(palette = "Paired") + # Using a larger palette for many phyla
+  labs(
+    title = "Figure 2: Taxonomic Composition Differs Between Sites",
+    x = "Individual Samples", y = "Relative Abundance"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    strip.text = element_text(face = "bold", size = 16)
+  )
+```
+
+### Figure 3: The Nuance of Diversity - Alpha Diversity
+
+This box plot shows your important finding that overall diversity was not different, highlighting the nuance of your results.
+
+```{r figure3-alpha-diversity}
+# Calculate and test Shannon diversity
+alpha_div <- estimate_richness(phyloseq_nocontrol, measures = "Shannon")
+alpha_div$SampleType <- sample_data(phyloseq_nocontrol)$SampleType
+stat_test <- wilcox.test(Shannon ~ SampleType, data = alpha_div)
+
+# Create the plot
+ggplot(alpha_div, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.15, size = 3, alpha = 0.8) +
+  scale_fill_manual(values = wong_palette) +
+  theme_minimal(base_size = 16) +
+  labs(
+    title = "Figure 3: Alpha Diversity is Similar Between Body Sites",
+    subtitle = paste("Wilcoxon p-value =", round(stat_test$p.value, 3)),
+    x = "Sample Type", y = "Shannon Diversity Index"
+  ) +
+  theme(legend.position = "none")
+```
+
+### Figure 4: The "Smoking Gun" - Pathogen Blooms
+
+These individual bar charts are the most direct, comprehensible way to show the overwhelming dominance of the pathogens in your case study turtles.
+
+```{r figure4-pathogen-plots}
+# Define samples and OTUs
+samples_of_interest <- c("F8C", "F9C", "F12C")
+otu_id_helicobacter <- "Otu000001"
+otu_id_chlamydophila <- "Otu000004"
+
+# Process data
+physeq_pathogens <- subset_samples(physeq_final, sample_names(physeq_final) %in% samples_of_interest)
+physeq_pathogens_rel <- transform_sample_counts(physeq_pathogens, function(x) x / sum(x))
+plot_df_path <- psmelt(physeq_pathogens_rel) %>%
+  mutate(Taxa_Group = case_when(
+    OTU == otu_id_helicobacter ~ "Helicobacter",
+    OTU == otu_id_chlamydophila ~ "Chlamydophila",
+    TRUE ~ "Other Bacteria"
+  ))
+
+# Define colors
+pathogen_colors <- c("Helicobacter" = "#CC79A7", "Chlamydophila" = "#E69F00", "Other Bacteria" = "lightgray")
+
+# Plot for F8C
+plot_F8C <- ggplot(subset(plot_df_path, Sample == "F8C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  scale_fill_manual(values = pathogen_colors) +
+  labs(title = paste0("Turtle F8C\n", round(subset(plot_df_path, Sample == "F8C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "% Helicobacter"), x = "", y = "") +
+  theme_minimal(base_size = 16) + theme(legend.position = "none", axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5, face="bold"))
+
+# Plot for F9C
+plot_F9C <- ggplot(subset(plot_df_path, Sample == "F9C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  scale_fill_manual(values = pathogen_colors) +
+  labs(title = paste0("Turtle F9C\n", round(subset(plot_df_path, Sample == "F9C" & OTU == otu_id_helicobacter)$Abundance*100, 1), "% Helicobacter"), x = "", y = "Relative Abundance") +
+  theme_minimal(base_size = 16) + theme(legend.position = "none", axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5, face="bold"))
+
+# Plot for F12C
+plot_F12C <- ggplot(subset(plot_df_path, Sample == "F12C"), aes(x = Sample, y = Abundance, fill = Taxa_Group)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  scale_fill_manual(values = pathogen_colors) +
+  labs(title = paste0("Turtle F12C\n", round(subset(plot_df_path, Sample == "F12C" & OTU == otu_id_chlamydophila)$Abundance*100, 1), "% Chlamydophila"), x = "", y = "") +
+  theme_minimal(base_size = 16) + theme(legend.position = "none", axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5, face="bold"))
+
+# Arrange plots together (requires the 'patchwork' package)
+# install.packages("patchwork")
+library(patchwork)
+(plot_F8C | plot_F9C | plot_F12C) + plot_annotation(title = "Figure 4: Overwhelming Dominance by a Single Pathogen in Dysbiotic Turtles")
+```
+
+### Figure 5: The Grand Summary - All Findings in One Plot
+
+This is the final, definitive PCoA plot that highlights all your case studies and tells the complete story on a single slide.
+
+```{r figure5-pcoa-grand-summary}
+# Define samples of interest
+helicobacter_cluster <- c("F8C", "F9C")
+chlamydia_case <- "F12C"
+
+# Prepare data for plotting
+plot_data <- data.frame(pcoa_ord$vectors[, 1:2], as(sample_data(phyloseq_nocontrol), "data.frame")) %>%
+  mutate(Health_Status = case_when(
+    rownames(.) %in% helicobacter_cluster ~ "Acute Dysbiosis (Helicobacter)",
+    rownames(.) == chlamydia_case         ~ "Acute Dysbiosis (Chlamydophila)",
+    TRUE                                 ~ "Healthy Baseline"
+  ))
+
+# Build the plot
+ggplot(plot_data, aes(x = Axis.1, y = Axis.2)) +
+  geom_point(aes(color = SampleType, shape = Health_Status), size = 5, alpha = 0.8, stroke = 1.2) +
+  scale_color_manual(values = wong_palette) +
+  scale_shape_manual(values = c("Healthy Baseline" = 16, "Acute Dysbiosis (Helicobacter)" = 17, "Acute Dysbiosis (Chlamydophila)" = 18)) +
+  theme_minimal(base_size = 16) +
+  labs(
+    title = "Figure 5: Microbiome Analysis Reveals Multiple Disease States",
+    subtitle = "Highlighting the Helicobacter cluster and the Chlamydophila case",
+    color = "Body Site", shape = "Inferred Health Status"
+  )

@@ -31,3 +31,5 @@ editor_options:
 
 [Midterm exam](Assignment/Mid_Term_Exam.html)
 
+[Practica plots](Assignment/practicePlots.html)
+

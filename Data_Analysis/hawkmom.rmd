@@ -21,9 +21,10 @@ library(picante)
 library(ggtree)
 ```
 
-# 3. Data Import
+# import files
 
 Now, we will import the Mothur output files: the shared file (OTU table), the taxonomy file, and the design file (metadata). Make sure these files are in the same directory as this Rmd file, or provide the full path to them.
+
 
 ```{r import-data}
 #make phyloseq object
@@ -183,7 +184,7 @@ Finally, let's visualize the taxonomic breakdown of our samples to see which bac
 ```{r taxonomy-plot}
 # 1. Start with our clean, no-controls phyloseq object
 #    Agglomerate the data at the "Phylum" level.
-phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Phylum", NArm = FALSE)
+phylum_data <- tax_glom(phyloseq_nocontrol, taxrank = "Genus", NArm = FALSE)
 
 # 2. Transform the counts to relative abundance for accurate comparison
 phylum_rel_abund <- transform_sample_counts(phylum_data, function(x) x / sum(x))
@@ -196,10 +197,10 @@ ggplot(plot_df, aes(x = Sample, y = Abundance, fill = Phylum)) +
   geom_bar(stat = "identity") +
   facet_wrap(~SampleType, scales = "free_x", nrow = 1) +
   labs(
-    title = "Taxonomic Composition by Phylum",
+    title = "Taxonomic Composition by Genus",
     x = "Samples",
     y = "Relative Abundance (%)",
-    fill = "Phylum"
+    fill = "Genus"
   ) +
   theme_minimal() +
   theme(

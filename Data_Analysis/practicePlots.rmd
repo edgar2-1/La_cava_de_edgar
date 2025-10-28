@@ -1,0 +1,107 @@
+---
+title: "Oct16"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#print datasets in R
+#install.packages("datasets")
+library(datasets)
+data("airquality")
+
+
+```
+
+```{r}
+spearman <- cor.test(
+  ~ airquality$Ozone + airquality$Wind,
+  method = "spearman",
+  exact = FALSE
+)
+spearman
+
+
+```
+```{r}
+tablita <- data.frame(
+  Temperature = airquality$Temp,
+  Wind = airquality$Wind,
+  Ozone = airquality$Ozone,
+  Month = airquality$Month,
+  Day = airquality$Day
+)
+tablita <- na.omit(tablita)
+head(tablita)
+```
+
+
+```{r}
+pointplot <- plot(tablita$Ozone, tablita$Wind)
+pointplot
+```
+
+```{r}
+#convert the month and day data to days of the year
+tablita$Date <- as.Date(paste(1973, tablita$Month, tablita$Day, sep = "-"))
+tablita$DayOfYear <- as.numeric(format(tablita$Date, "%j"))
+head(tablita)
+```
+```{r}
+#scatter plot of Ozone vs Day of Year add distribution line and r values
+scatterplot <- plot(tablita$DayOfYear, tablita$Ozone)
+scatterplot
+
+```
+
+```{r}
+plot(tablita$DayOfYear, tablita$Ozone, main = "Ozone Levels Over Days of the Year",
+     xlab = "Day of the Year", ylab = "Ozone Levels", pch = 19, col = "blue")
+abline(lm(tablita$Ozone ~ tablita$DayOfYear), col = "red")
+cor(tablita$DayOfYear, tablita$Ozone, method = "pearson")
+```
+
+```{r}
+#histogram
+hist(tablita$Wind, main = "Histogram of Wind", xlab = "Wind", col = "lightblue", border = "black")
+```
+```{r}
+#hist temperature
+hist(tablita$Temp, main = "Histogram of Temperature", xlab = "Temperature
+", col = "lightcoral", border = "black")
+```
+
+```{r}
+boxplot(tablita$Temperature, main = "Boxplot of Temperature Levels", ylab = "Temperature", col = "red")
+```
+```{r}
+#compare wind to ozonw to day
+plot(tablita$Wind, tablita$Ozone, main = "Ozone Levels vs Wind Speed",
+     xlab = "Wind Speed (mph)", ylab = "Ozone Levels", pch = 19, col = "purple")
+abline(lm(tablita$Ozone ~ tablita$Wind), col = "red")
+cor(tablita$Wind, tablita$Ozone, method = "pearson")
+```
+
+```{r}
+#boxplot wind
+boxplot(tablita$Wind, main = "Boxplot of Wind Levels", ylab
+ = "Wind", col = "lightgreen")
+```
+```{r}
+boxplot(tablita$Ozone, main = "Boxplot of Ozone Levels", ylab = "Ozone", col = "orange")
+```
+
+```{r}
+anova_model <- aov(Ozone ~ as.factor(Month), data = tablita)
+summary(anova_model)
+```
+
+```{r}
+anova_model2 <- aov(tablita$Wind ~ as.factor(Month), data = tablita)
+summary(anova_model2)
+```
