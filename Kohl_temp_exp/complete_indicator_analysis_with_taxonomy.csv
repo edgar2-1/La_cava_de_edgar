@@ -1,0 +1,14 @@
+"OTU","s.No","s.Yes","index","stat","p.value","Kingdom","Phylum","Class","Order","Family","Genus","Species"
+"Otu0002",1,0,1,0.837225984572829,0.004,"Bacteria","Bacteroidetes","Bacteroidia","Bacteroidales","Bacteroidaceae","Bacteroides",NA
+"Otu0009",1,0,1,0.799118587014549,0.005,"Bacteria","Firmicutes","Firmicutes_unclassified","Firmicutes_unclassified","Firmicutes_unclassified","Firmicutes_unclassified",NA
+"Otu0001",0,1,2,0.726788042620203,0.021,"Bacteria","Fusobacteria","Fusobacteria","Fusobacteriales","Fusobacteriaceae","Cetobacterium",NA
+"Otu0008",0,1,2,0.663976234573637,0.096,"Bacteria","Firmicutes","Clostridia","Clostridiales","Clostridiaceae_1","Clostridium_sensu_stricto",NA
+"Otu0003",1,1,3,0.968245836551854,NA,"Bacteria","Firmicutes","Clostridia","Clostridiales","Peptostreptococcaceae","Peptostreptococcaceae_unclassified",NA
+"Otu0004",1,1,3,0.810092587300983,NA,"Bacteria","Firmicutes","Clostridia","Clostridiales","Clostridiaceae_1","Clostridium_sensu_stricto",NA
+"Otu0005",1,1,3,0.847791247890659,NA,"Bacteria","Proteobacteria","Gammaproteobacteria","Enterobacteriales","Enterobacteriaceae","Enterobacteriaceae_unclassified",NA
+"Otu0006",1,1,3,0.75,NA,"Bacteria","Proteobacteria","Gammaproteobacteria","Enterobacteriales","Enterobacteriaceae","Morganella",NA
+"Otu0007",1,1,3,0.661437827766148,NA,"Bacteria","Bacteroidetes","Bacteroidia","Bacteroidales","Bacteroidales_unclassified","Bacteroidales_unclassified",NA
+"Otu0010",1,1,3,0.728868986855663,NA,"Bacteria","Firmicutes","Clostridia","Clostridiales","Clostridiaceae_1","Clostridium_sensu_stricto",NA
+"Otu0011",1,1,3,0.559016994374947,NA,"Bacteria","Proteobacteria","Gammaproteobacteria","Enterobacteriales","Enterobacteriaceae","Providencia",NA
+"Otu0013",1,1,3,0.612372435695794,NA,"Bacteria","Firmicutes","Clostridia","Clostridiales","Lachnospiraceae","Clostridium_XlVa",NA
+"Otu0014",1,1,3,0.5,NA,"Bacteria","Bacteroidetes","Bacteroidia","Bacteroidales","Porphyromonadaceae","Porphyromonadaceae_unclassified",NA

@@ -41,4 +41,7 @@ rsconnect/
 .quarto
 EquationCitations.csv
 *.design
-
+*.xlsx
+*.png
+*.log
+*.txt

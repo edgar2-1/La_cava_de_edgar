@@ -1,0 +1,9 @@
+INFO [2025-10-28 16:09:26] $x
+INFO [2025-10-28 16:09:26] list(Sterile = taxa_names(core_sterile), Muck = taxa_names(core_muck))
+INFO [2025-10-28 16:09:26] 
+INFO [2025-10-28 16:09:26] $filename
+INFO [2025-10-28 16:09:26] [1] "core_microbiome_venn.png"
+INFO [2025-10-28 16:09:26] 
+INFO [2025-10-28 16:09:26] $fill
+INFO [2025-10-28 16:09:26] c("lightblue", "pink")
+INFO [2025-10-28 16:09:26] 

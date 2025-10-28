@@ -1,0 +1,33 @@
+Sample ID	Mother	age	condition	Feed days
+SS004	11.21	7+ days	Sterile	No
+SS007	11.22	20+ days	Muck	Yes
+SS011	NR1908	15+ days	Muck	No
+SS016	11.21	7+ days	Sterile	No
+SS019	11.22	15+ days	Muck	Yes
+SS023	NR-1910	Fetus	Sterile	No
+SS028	11.21	7+ days	Muck	No
+SS031	11.22	15+ days	Sterile	Yes
+SS035	NR1910	Fetus	Sterile	No
+SS040	11.21	7+ days	Muck	No
+SS043	11.22	15+ days	Sterile	Yes
+SS047	NR1908	15+ days	Sterile	No
+SS051	11.21	Newborn	Newborn	No
+SS052	11.21	7+ days	Muck	No
+SS054	11.22	20+ days	Sterile	Yes
+SS055	11.22	Newborn	Newborn	No
+SS059	NR1908	15+ days	Sterile	No
+SS063	11.21	7+ days	Sterile	No
+SS064	11.21	7+ days	Muck	No
+SS066	11.22	20+ days	Sterile	Yes
+SS070	NR1912	15+ days	Sterile	Yes
+SS071	NR1908	15+ days	Sterile	No
+SS075	11.21	7+ days	Sterile	No
+SS076	11.21	7+ days	Muck	No
+SS078	11.22	20+ days	Sterile	Yes
+SS082	RNR1912	15+ days	Sterile	Yes
+SS083	NR1908	15+ days	Sterile	No
+SS087	11.21	7+ days	Sterile	No
+SS088	11.21	Newborn	Newborn	No
+SS090	11.22	20+ days	Muck	Yes
+SS094	NR1910	Fetus	Sterile	No
+SS095	NR1908	15+ days	Muck	No
