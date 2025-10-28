@@ -1,0 +1,1008 @@
+---
+title: "kohleR"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup-and-import}
+
+# --- Load ALL necessary libraries ---
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(DESeq2)
+library(RColorBrewer)
+library(indicspecies)
+library(FSA) # For Dunn's Test
+library(tidyverse) # For data manipulation
+
+# --- Read OTU Table ---
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+
+
+otu_mat <- otu_raw[, -(1:3)]
+
+
+rownames(otu_mat) <- otu_raw$Group 
+
+
+otu_mat <- t(otu_mat)
+
+
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+# --- Read and Process Taxonomy ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, quote = "")
+taxonomy_clean <- lapply(strsplit(tax_raw$Taxonomy, ";"), function(x) {
+    x <- gsub("\\(.*?\\)|\\\"", "", x[nchar(x) > 0]); trimws(x)
+})
+max_ranks <- 7; taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- tax_raw$OTU
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Read and Process NEW Metadata (kohlerrr.design) ---
+metadata <- read.table("kohler.design.txt", header = TRUE, sep = "\t")
+colnames(metadata)[2:3] <- c("SampleType", "Age")
+rownames(metadata) <- metadata$SampleID
+metadata <- metadata[, -1] 
+metadata$SampleType <- factor(metadata$SampleType)
+metadata$Feed <- factor(metadata$Feed)
+sample_data_obj <- sample_data(metadata)
+```
+
+```{r phyloseq-object}
+
+# Read OTU table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+
+# Set rownames of the matrix (Taxa) before transposing
+# The original row names are NOT needed as they are just row numbers.
+
+# Extract only the count data columns (from column 4 onwards)
+otu_mat <- otu_raw[, -(1:3)]
+
+# CRITICAL: Set the row names of the matrix (these are the sample IDs)
+# This MUST be done before transposing
+rownames(otu_mat) <- otu_raw$Group 
+
+# Transpose the matrix so OTUs are rows and Samples are columns
+# Now, otu_mat has OTUs as rows (OTU IDs) and Samples as columns (Sample IDs)
+otu_mat <- t(otu_mat)
+
+# Create phyloseq OTU table
+# taxa_are_rows = TRUE is correct after the transpose
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Check the result
+head(otu_tab)
+# Read and Process Taxonomy
+
+```
+
+```{r}
+# --- 1. Read the taxonomy file ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+
+# --- 2. Extract taxonomy strings and OTU IDs ---
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+# --- 3. Split taxonomy strings by ';' and clean ---
+taxonomy_clean <- strsplit(taxonomy_strings, ";")
+
+taxonomy_clean <- lapply(taxonomy_clean, function(x) {
+  x <- x[nchar(x) > 0]                # Remove empty strings
+  x <- gsub("\\(.*?\\)", "", x)       # Remove confidence scores in parentheses
+  x <- gsub('\\"', '', x)              # Remove escaped quotes
+  trimws(x)                           # Trim whitespace
+})
+
+# --- 4. Pad each taxonomy vector to length 7 (Kingdom to Species) ---
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks  # pad with NAs if needed
+  x
+}))
+
+# --- 5. Assign column and row names ---
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+# --- 6. Create tax_table object for phyloseq ---
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Optional: Check the result ---
+head(tax_tab)
+```
+
+
+```{r metadata-read-final}
+
+# Load the phyloseq package
+library(phyloseq)
+
+# 1. Read the design file using the ROBUST separator sep=""
+# sep="" tells R to use one or more whitespace characters (tabs/spaces) as a delimiter.
+metadata <- read.table("Kohler.design", header = TRUE, sep = "", stringsAsFactors = FALSE)
+
+# Check the column names to verify the read
+# print(colnames(metadata)) 
+
+# 2. Rename columns for clarity and consistency (5 columns should be read now)
+# Index 2: Mother -> MotherID
+colnames(metadata)[2] <- "MotherID"
+
+# Index 5: Feed -> FeedStatus
+colnames(metadata)[5] <- "FeedStatus" 
+
+# 3. Set rownames using the SampleID
+rownames(metadata) <- metadata$SampleID
+
+# 4. Prepare for phyloseq
+metadata <- metadata[, -1] # Remove the redundant SampleID column
+
+# 5. Ensure categorical variables are factors
+metadata$Age <- factor(metadata$Age)
+metadata$SampleType <- factor(metadata$SampleType)
+metadata$FeedStatus <- factor(metadata$FeedStatus)
+metadata$MotherID <- factor(metadata$MotherID)
+
+# 6. Create the phyloseq 'sample_data' object
+sample_data_obj <- sample_data(metadata)
+
+head(sample_data_obj)
+```
+
+```{r phyloseq-object-final}
+
+# Load necessary library
+library(phyloseq)
+
+# --- Ensure components are named for pruning ---
+
+# Get sample names from the metadata object (which is assumed to be correct now)
+meta_samples <- sample_names(sample_data_obj)
+
+# --- Prune OTU and Tax tables to match metadata ---
+# This step ensures that all components have identical sample names and counts.
+otu_tab_pruned <- prune_samples(meta_samples, otu_tab)
+tax_tab_pruned <- prune_taxa(taxa_names(otu_tab_pruned), tax_tab)
+
+# --- Combine components ---
+# Note: If you have a phylogenetic tree object (e.g., 'tree_obj'), add it here.
+physeq <- phyloseq(otu_tab_pruned, tax_tab_pruned, sample_data_obj)
+
+# Check the final object
+print(physeq)
+```
+
+
+```{r data-prep-alpha-data}
+# 1. Filter and Rarefy (Creates physeq_rarefied)
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+min_depth <- min(sample_sums(physeq_filt)); set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# 2. Calculate Diversity (Creates alpha_diversity_rarefied)
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon"))
+
+# 3. Merge Diversity and Metadata (Creates alpha_data_rarefied)
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied) 
+
+# 4. Order Factors (Crucial for correct plotting order)
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+alpha_data_rarefied$SampleType <- factor(alpha_data_rarefied$SampleType, 
+                                           levels = c("Mother", "Fetus", "Newborn", "7+days", "15+days", "20+days"))
+
+```
+
+```{r alpha-tests}
+# Kruskal-Wallis Test on Shannon by Age and Feed Status
+
+# Fix 1: The 'Age' factor needs to be applied to the current data frame first, 
+# as the data was just read with the column name 'Age'.
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+
+
+kw_test_age <- kruskal.test(Shannon ~ Age, data = alpha_data_rarefied)
+
+# Fix 2: Change 'Feed' to the correct variable name, 'FeedStatus'.
+kw_test_feed <- kruskal.test(Shannon ~ FeedStatus, data = alpha_data_rarefied) 
+#                             ^^^^^^^^ Corrected variable name
+
+print(kw_test_age)
+print(kw_test_feed)
+```
+
+```{r beta-tests}
+bray_curtis_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# PERMANOVA for Feed Status and Full Model
+permanova_result_feed <- adonis2(bray_curtis_dist ~ FeedStatus, 
+                                 data = as(sample_data(physeq_rarefied), "data.frame"), permutations = 999)
+permanova_result_full <- adonis2(bray_curtis_dist ~ SampleType + Age + FeedStatus, 
+                                 data = as(sample_data(physeq_rarefied), "data.frame"), permutations = 999)
+
+print("PERMANOVA Result (Feed Status):"); print(permanova_result_feed)
+print("PERMANOVA Result (Full Model):"); print(permanova_result_full)
+
+# PERMDISP for Feed Status
+dispersion_feed <- betadisper(bray_curtis_dist, sample_data(physeq_rarefied)$Feed)
+print("PERMDISP for Feed Status:"); anova(dispersion_feed)
+```
+
+```{r visualization}
+# PCoA Plots
+pcoa_ordination <- ordinate(physeq_rarefied, method = "PCoA", distance = bray_curtis_dist)
+
+# Plot by Feed Status
+pcoa_by_feed <- plot_ordination(physeq_rarefied, pcoa_ordination, color = "FeedStatus") +
+    geom_point(size = 3) + stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = FeedStatus)) +
+    ggtitle("PCoA of Microbial Communities (Colored by Feed Status)") + theme_bw()
+print(pcoa_by_feed)
+
+# Alpha Diversity Plot (Shannon by SampleType)
+p_shannon_type <- ggplot(alpha_data_rarefied, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+    geom_boxplot() + geom_point(position = position_jitter(width = 0.2), alpha = 0.7) +
+    labs(title = "Shannon Diversity by Sample Type", y = "Shannon Index") + theme_bw() + theme(legend.position = "none")
+print(p_shannon_type)
+
+```
+
+```{r spearman-analysis-and-plot}
+# Load necessary libraries (already loaded, but ensures all functions are available)
+library(ggplot2)
+library(tidyverse) 
+
+# --- 1. Variable Creation (Permanent Assignment without pipes) ---
+
+# A. Clean the categorical Age column
+alpha_data_rarefied$Age_Cleaned <- trimws(
+    gsub(" ", "", as.character(alpha_data_rarefied$Age))
+)
+
+# B. Create the Age_Numerical column using case_when
+# This ensures the output column is strictly numerical and permanently assigned.
+alpha_data_rarefied$Age_Numerical <- case_when(
+    alpha_data_rarefied$Age_Cleaned == "Fetus" ~ 0,
+    alpha_data_rarefied$Age_Cleaned == "Newborn" ~ 1,
+    alpha_data_rarefied$Age_Cleaned == "7+days" ~ 7,
+    alpha_data_rarefied$Age_Cleaned == "15+days" ~ 15,
+    alpha_data_rarefied$Age_Cleaned == "20+days" ~ 20,
+    TRUE ~ NA_real_ 
+)
+
+
+# --- 2. Statistical Test (Optional, but included for completeness) ---
+spearman_test <- cor.test(
+    alpha_data_rarefied$Age_Numerical, 
+    alpha_data_rarefied$Shannon, 
+    method = "spearman"
+)
+print("Spearman Rank Correlation (Age vs. Shannon):")
+print(spearman_test)
+
+# --- 3. PLOT CREATION (Uses the guaranteed variables) ---
+
+p_trend <- ggplot(alpha_data_rarefied, aes(x = Age_Numerical, y = Shannon)) +
+    geom_point(aes(color = Age), size = 3) +
+    geom_smooth(method = "lm", color = "black", se = TRUE) +
+    
+    labs(
+        title = "Microbial Shannon Diversity Trend Over Early Life Stages",
+        x = "Approximate Age (Days)",
+        y = "Shannon Diversity Index"
+    ) +
+    theme_bw() +
+    theme(legend.position = "bottom")
+
+print(p_trend)
+```
+
+```{r permanova-motherid}
+# Load vegan (for adonis2)
+library(vegan)
+
+# Assuming bray_curtis_dist and physeq_rarefied are defined
+
+# PERMANOVA test for Maternal ID (clutch effect)
+permanova_result_mother <- adonis2(
+    bray_curtis_dist ~ MotherID,
+    data = as(sample_data(physeq_rarefied), "data.frame"),
+    permutations = 999
+)
+
+print("PERMANOVA Result (MotherID):")
+print(permanova_result_mother)
+
+# PERMDISP test for MotherID
+dispersion_mother <- betadisper(bray_curtis_dist, sample_data(physeq_rarefied)$MotherID)
+print("PERMDISP for MotherID:"); anova(dispersion_mother)
+```
+
+```{r}
+permanova_mother_plus_feed <- adonis2(
+    bray_curtis_dist ~ MotherID + FeedStatus,
+    data = as(sample_data(physeq_rarefied), "data.frame"),
+    permutations = 999
+)
+print(permanova_mother_plus_feed)
+```
+
+```{r permdisp-mother-posthoc}
+# Assuming 'dispersion_mother' object (from betadisper) is available
+# Run Tukey's HSD post-hoc test to compare dispersion between all mother pairs
+dispersion_posthoc <- TukeyHSD(dispersion_mother)
+
+print("Tukey's HSD Test on MotherID Dispersion:")
+print(dispersion_posthoc)
+```
+
+
+```{r plot-within-mother-dispersion}
+
+# Create a data frame containing the distances to the centroid
+dispersion_df <- data.frame(
+    MotherID = sample_data(physeq_rarefied)$MotherID,
+    Distance = dispersion_mother$distances
+)
+
+# Plot the distances using a box plot (or violin plot)
+p_dispersion_mother <- ggplot(dispersion_df, aes(x = MotherID, y = Distance, fill = MotherID)) +
+    geom_boxplot(outlier.shape = NA) + # Hide outliers to prevent clutter
+    geom_jitter(width = 0.1, alpha = 0.7) + # Show individual sample distances
+    labs(
+        title = "Microbial Community Dispersion (Variation) Within Mother's Clutch",
+        y = "Distance to Group Centroid (Bray-Curtis)",
+        x = "Mother ID"
+    ) +
+    theme_bw() +
+    theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_dispersion_mother)
+```
+
+```{r combined-env-feed-analysis}
+library(vegan)
+library(phyloseq)
+library(tidyverse)
+
+# --- 1. Filter the phyloseq object to only include Muck and Sterile samples ---
+physeq_env_subset <- subset_samples(physeq_rarefied, SampleType %in% c("Sterile", "Muck"))
+
+# Remove groups/levels that no longer exist (e.g., "Newborn")
+physeq_env_subset <- physeq_env_subset %>%
+    prune_taxa(taxa_sums(.) > 0, .) %>%
+    prune_samples(sample_sums(.) > 0, .)
+
+# Ensure factor levels are correct after subsetting
+physeq_env_subset@sam_data$MotherID <- droplevels(physeq_env_subset@sam_data$MotherID)
+
+
+# --- 2. Calculate Distance and Run PERMANOVA (Sequential Model) ---
+bray_env_subset <- phyloseq::distance(physeq_env_subset, method = "bray")
+
+# Sequential Model: MotherID is tested first (as a confounder), 
+# followed by the two environmental factors (SampleType and FeedStatus).
+permanova_full_env <- adonis2(
+    bray_env_subset ~ MotherID + SampleType + FeedStatus,
+    data = as(sample_data(physeq_env_subset), "data.frame"),
+    permutations = 999
+)
+
+print("PERMANOVA Result (MotherID + SampleType + FeedStatus):")
+print(permanova_full_env)
+```
+
+
+```{r visualize-combined-env}
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+
+# Calculate Bray–Curtis distance (if not already done)
+bray_dist <- phyloseq::distance(physeq_env_subset, method = "bray")
+
+# Perform NMDS (non-metric multidimensional scaling)
+nmds <- ordinate(physeq_env_subset, method = "NMDS", distance = bray_dist)
+
+# Convert to data frame for ggplot
+nmds_df <- plot_ordination(physeq_env_subset, nmds, justDF = TRUE)
+
+# Plot, coloring by a variable of interest
+ggplot(nmds_df, aes(x = NMDS1, y = NMDS2, color = SampleType, shape = FeedStatus)) +
+  geom_point(size = 3) +
+  stat_ellipse(aes(group = SampleType), linetype = 2) +
+  labs(
+    title = "NMDS Ordination (Bray–Curtis) - Colored by Sample Type",
+    subtitle = "PERMANOVA significant (p = 0.001)",
+    x = "NMDS1",
+    y = "NMDS2"
+  ) +
+  theme_bw() +
+  theme(legend.position = "right")
+
+```
+
+```{r permanova-variance-explained-plot}
+# Example PERMANOVA result object
+permanova_res <- adonis2(
+  bray_env_subset ~ MotherID + SampleType + FeedStatus,
+  data = as(sample_data(physeq_env_subset), "data.frame"),
+  permutations = 999
+)
+
+# Convert to data frame
+permanova_df <- as.data.frame(permanova_res)
+permanova_df$Variable <- rownames(permanova_df)
+permanova_df <- permanova_df[permanova_df$Variable != "Total", ]  # remove total row
+
+# Plot R² (variance explained)
+ggplot(permanova_df, aes(x = reorder(Variable, R2), y = R2, fill = Variable)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "PERMANOVA Variance Explained (Bray–Curtis)",
+    x = "Variable",
+    y = "R² (Proportion of Variation Explained)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+```{r elegant-pcoa-permanova-plots}
+# Load needed libraries
+library(phyloseq)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(viridis) # for better color palettes
+
+# ----- 1. Compute Bray–Curtis distance and PCoA -----
+bray_dist <- phyloseq::distance(physeq_env_subset, method = "bray")
+pcoa <- ordinate(physeq_env_subset, method = "PCoA", distance = bray_dist)
+pcoa_df <- plot_ordination(physeq_env_subset, pcoa, justDF = TRUE)
+
+
+# ----- 4. Elegant PCoA plot -----
+p1 <- ggplot(pcoa_df, aes(x = Axis.1, y = Axis.2)) +
+  geom_point(aes(color = SampleType, shape = FeedStatus), size = 4, alpha = 0.8) +
+  stat_ellipse(aes(group = SampleType, color = SampleType), 
+               linetype = 2, linewidth = 0.6, show.legend = FALSE) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  ) +
+  labs(
+    title = "PCoA Ordination (Bray–Curtis Distance)",
+    subtitle = paste0("PERMANOVA: R² = ",
+                      round(sum(permanova_df$R2), 2),
+                      ", p = ",
+                      format(permanova_res$`Pr(>F)`[1], digits = 3)),
+    x = paste0("PCoA1 (", round(pcoa$values$Relative_eig[1] * 100, 1), "%)"),
+    y = paste0("PCoA2 (", round(pcoa$values$Relative_eig[2] * 100, 1), "%)")
+  )
+
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Convert adonis2 result to a data frame
+permanova_df <- as.data.frame(
+  adonis2(
+    bray_dist ~ MotherID + SampleType + FeedStatus,
+    data = as(sample_data(physeq_env_subset), "data.frame"),
+    permutations = 999,
+    by = "margin"
+  )
+)
+
+# Add a variable column
+permanova_df$Variable <- rownames(permanova_df)
+
+# Clean it up: remove residuals, totals, and zero-variance variables
+permanova_df <- permanova_df %>%
+  filter(!(Variable %in% c("Residual", "Total"))) %>%
+  filter(R2 > 0) %>%
+  mutate(
+    Variable = factor(Variable, levels = Variable[order(R2, decreasing = TRUE)]),
+    perc = round(R2 * 100, 1)
+  )
+
+# --- Plot ---
+p2 <- ggplot(permanova_df, aes(x = R2, y = Variable, fill = Variable)) +
+  geom_col(width = 0.7, color = "black") +
+  geom_text(aes(label = paste0(perc, "%")),
+            hjust = -0.15, size = 4.5) +
+  scale_fill_viridis_d(option = "C", end = 0.85) +
+  coord_cartesian(xlim = c(0, max(permanova_df$R2) + 0.05)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  ) +
+  labs(
+    title = "PERMANOVA: Variance Explained by Factor",
+    subtitle = "Bray–Curtis dissimilarity (999 permutations)",
+    x = expression(R^2 ~ "(Proportion of Variation Explained)"),
+    y = NULL
+  )
+
+
+
+# install.packages("patchwork") # if not installed
+library(patchwork)
+p1 + p2 + plot_layout(widths = c(2.2, 2))
+
+```
+
+```{r permanova-by-margin}
+# Convert to data frame
+permanova_df <- as.data.frame(permanova_res)
+permanova_df$Variable <- rownames(permanova_df)
+
+# Keep only the main factors
+permanova_df <- permanova_df %>%
+  filter(!(Variable %in% c("Residual", "Total"))) %>%
+  mutate(Variable = factor(Variable, levels = Variable[order(R2, decreasing = TRUE)]))
+
+# Simple, clean R² bar plot
+ggplot(permanova_df, aes(x = R2, y = Variable, fill = Variable)) +
+  geom_col(width = 0.7, color = "black") +
+  geom_text(aes(label = paste0(round(R2 * 100, 1), "%")),
+            hjust = -0.2, size = 4) +
+  scale_fill_viridis_d(option = "C", end = 0.8) +
+  coord_cartesian(xlim = c(0, max(permanova_df$R2) + 0.05)) +
+  labs(
+    title = "PERMANOVA: Variance Explained by Factor",
+    x = expression(R^2 ~ "(Proportion of Variation)"),
+    y = NULL
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+
+
+```{r alpha-diversity-alt-metrics}
+# Calculate Observed, Chao1, ACE, Shannon, Simpson, InvSimpson, and Fisher alpha metrics
+alt_alpha <- estimate_richness(physeq_rarefied, 
+  measures = c("Observed", "Chao1", "ACE", "Shannon", "Simpson", "InvSimpson", "Fisher"))
+
+# Merge with sample metadata
+alt_alpha_metadata <- cbind(alt_alpha, as.data.frame(sample_data(physeq_rarefied)))
+
+# Example: Kruskal-Wallis test for Simpson by Age
+kw_test_simpson <- kruskal.test(Simpson ~ Age, data = alt_alpha_metadata)
+print(kw_test_simpson)
+
+# Example: Boxplot for Simpson diversity by SampleType
+library(ggplot2)
+ggplot(alt_alpha_metadata, aes(x = SampleType, y = Simpson, fill = SampleType)) +
+  geom_boxplot() +
+  geom_point(position = position_jitter(width = 0.15), alpha = 0.7) +
+  labs(title = "Simpson Diversity by Sample Type", y = "Simpson Index") +
+  theme_bw() + theme(legend.position = "none")
+```
+
+```{r run-nmds}
+# Assuming bray_curtis_dist (rarefied data) and physeq_rarefied exist
+
+# Run NMDS ordination (NMDS is the method of choice to resolve the Arch Effect)
+# 'trymax = 999' allows the function many attempts to find the best solution.
+nmds_ordination <- ordinate(
+    physeq_rarefied, 
+    method = "NMDS", 
+    distance = bray_curtis_dist,
+    trymax = 999
+)
+
+# Print the stress value to evaluate fit (Stress < 0.2 is acceptable)
+print(nmds_ordination)
+```
+```{r plot-nmds}
+# Plot the NMDS result, coloring by FeedStatus
+p_nmds_feed <- plot_ordination(physeq_rarefied, nmds_ordination, color = "FeedStatus") +
+    geom_point(size = 4, alpha = 0.8) +
+    stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = FeedStatus)) +
+    ggtitle("NMDS Ordination (Resolving Arch Effect)") +
+    labs(caption = paste("Stress: ", round(nmds_ordination$stress, 3))) +
+    theme_bw()
+
+print(p_nmds_feed)
+```
+
+```{r part-1-data-prep}
+# Load necessary libraries (redundant, but good for self-contained chunk)
+library(phyloseq)
+library(tidyverse)
+
+# --- 1. Filter and Rarefy (Creates physeq_rarefied) ---
+# Filter out rare taxa
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+
+# Rarefy to the minimum depth for robust comparison
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42) 
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# --- 2. Calculate Diversity (Creates alpha_diversity_rarefied) ---
+alpha_diversity_rarefied <- estimate_richness(
+    physeq_rarefied, 
+    measures = c("Observed", "Shannon", "Simpson")
+)
+
+# --- 3. Merge Diversity and Metadata (Creates alpha_data_rarefied) ---
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+
+# The final plotting data frame
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied) 
+
+# --- 4. Order Factors for Plotting and Analysis ---
+
+# A. Order the Age Factor (Crucial for correct plot order)
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+
+# B. Ensure FeedStatus is a factor (Critical for the K-W test)
+alpha_data_rarefied$FeedStatus <- factor(alpha_data_rarefied$FeedStatus)
+
+# C. Create the Numerical Age column for trend analysis
+alpha_data_rarefied <- alpha_data_rarefied %>%
+  mutate(
+    Age_Cleaned = trimws(gsub(" ", "", as.character(Age))),
+    Age_Numerical = case_when(
+      Age_Cleaned == "Fetus" ~ 0,
+      Age_Cleaned == "Newborn" ~ 1,
+      Age_Cleaned == "7+days" ~ 7,
+      Age_Cleaned == "15+days" ~ 15,
+      Age_Cleaned == "20+days" ~ 20,
+      TRUE ~ NA_real_
+    )
+  )
+
+# Display head of the final data frame to confirm structure
+head(alpha_data_rarefied)
+
+print(permanova_full_env)
+```
+
+```{r plot-beta-nmds}
+library(ggplot2)
+library(vegan)
+library(phyloseq)
+
+# 1. Run NMDS (using the best solution from previous analysis)
+nmds_ordination <- ordinate(
+    physeq_rarefied, 
+    method = "NMDS", 
+    distance = bray_curtis_dist,
+    trymax = 999
+)
+
+# 2. Plot the result, coloring by FeedStatus
+p_nmds_feed <- plot_ordination(physeq_rarefied, nmds_ordination, color = "FeedStatus") +
+    geom_point(size = 4, alpha = 0.8) +
+    stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = FeedStatus)) +
+    ggtitle("Fig 1. Microbial Community Structure by Feeding Status (NMDS)") +
+    labs(
+        caption = paste("Stress:", round(nmds_ordination$stress, 3)),
+        subtitle = "PERMANOVA: FeedStatus is significant (p = 0.018)"
+    ) +
+    theme_bw(base_size = 14) +
+    theme(legend.title = element_text(face = "bold"))
+
+print(p_nmds_feed)
+```
+
+```{r plot-variance-explained}
+# Convert the full sequential PERMANOVA result to a data frame
+permanova_res <- adonis2(
+    bray_curtis_dist ~ MotherID + FeedStatus + Age + SampleType, # Use the full set of factors
+    data = as(sample_data(physeq_rarefied), "data.frame"),
+    permutations = 999,
+    by = "margin" # Use 'margin' to get the effect of each factor
+)
+
+permanova_df <- as.data.frame(permanova_res)
+permanova_df$Variable <- rownames(permanova_df)
+
+# Filter, calculate percentage, and order by R2
+permanova_df <- permanova_df %>%
+    filter(!(Variable %in% c("Residual", "Total"))) %>%
+    mutate(
+        Variable = gsub("MotherID", "Maternal Clutch (MotherID)", Variable),
+        Variable = gsub("FeedStatus", "Feeding Status (Independent)", Variable),
+        Variable = factor(Variable, levels = Variable[order(R2)]),
+        R2_perc = round(R2 * 100, 1)
+    )
+
+p_r2_bar <- ggplot(permanova_df, aes(x = R2, y = Variable, fill = R2)) +
+    geom_col(color = "black") +
+    geom_text(aes(label = paste0(R2_perc, "%")), hjust = -0.1, size = 4) +
+    scale_fill_gradient(low = "lightblue", high = "darkblue") +
+    coord_cartesian(xlim = c(0, max(permanova_df$R2) + 0.1)) +
+    labs(
+        title = "Fig 2. Partitioning of Community Variance (R²)",
+        subtitle = "Maternal ID accounts for the largest explained fraction.",
+        x = expression(R^2 ~ "(Proportion of Variation Explained)"),
+        y = NULL
+    ) +
+    theme_bw(base_size = 14) +
+    theme(legend.position = "none")
+
+print(p_r2_bar)
+```
+
+```{r plot-alpha-feed}
+p_alpha_feed <- ggplot(alpha_data_rarefied, aes(x = FeedStatus, y = Shannon, fill = FeedStatus)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_point(position = position_jitter(width = 0.15), alpha = 0.7) +
+    labs(
+        title = "Fig 3. Shannon Diversity by Feeding Status",
+        subtitle = "Kruskal-Wallis: Non-significant (p = 0.223)",
+        x = "Feeding Status",
+        y = "Shannon Diversity Index"
+    ) +
+    theme_bw(base_size = 14) +
+    theme(legend.position = "none")
+
+print(p_alpha_feed)
+```
+
+```{r plot-age-trend}
+p_trend <- ggplot(alpha_data_rarefied, aes(x = Age_Numerical, y = Shannon)) +
+    geom_point(aes(color = Age), size = 3) +
+    geom_smooth(method = "lm", color = "black", se = FALSE) + # SE=FALSE for clarity on non-sig trend
+    labs(
+        title = "Fig 4. Microbial Diversity Trend Across Early Life Stages",
+        subtitle = "Spearman Correlation: Non-significant (p = 0.686)",
+        x = "Age",
+        y = "Shannon Diversity Index"
+    ) +
+  theme_bw(base_size = 14) +
+    theme(legend.position = "none")
+print(p_trend)
+```
+
+```{r deseq2-feed-setup}
+library(DESeq2)
+
+# Prune taxa with zero total counts for DESeq2 compatibility (using physeq_filt)
+physeq_deseq <- prune_taxa(taxa_sums(physeq_filt) > 0, physeq_filt)
+
+# Convert phyloseq object to DESeq2 format, specifying the FeedStatus variable
+diagdds <- phyloseq_to_deseq2(physeq_deseq, ~ FeedStatus)
+
+# Run the DESeq2 analysis (takes a moment)
+diagdds <- DESeq(diagdds, test = "Wald", fitType = "parametric")
+```
+
+```{r}
+# Extract metadata from phyloseq object
+meta <- as.data.frame(sample_data(physeq))
+
+# Now create the sequencing depth data frame
+sample_sums_df <- data.frame(
+  SampleID = sample_names(physeq),
+  SeqDepth = sample_sums(physeq)
+)
+
+# Merge with metadata
+sample_sums_df <- merge(sample_sums_df, meta, by.x = "SampleID", by.y = "row.names")
+
+# Visualize sequencing depth
+library(ggplot2)
+ggplot(sample_sums_df, aes(x = reorder(SampleID, SeqDepth), y = SeqDepth, fill = FeedStatus)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Sequencing Depth per Sample", x = "Sample", y = "Read Count") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 100, vjust = 0.5))
+
+```
+
+```{r}
+
+# Aggregate to Phylum level
+physeq_phylum <- tax_glom(physeq_rarefied, taxrank = "Phylum")
+physeq_phylum_rel <- transform_sample_counts(physeq_phylum, function(x) x / sum(x) * 100)
+
+# Barplot by sample
+plot_bar(physeq_phylum_rel, fill = "Phylum") +
+  facet_wrap(~FeedStatus, scales = "free_x") +
+  labs(title = "Phylum-Level Composition by Feed Status") +
+  theme_bw()
+
+# Repeat for Family level
+physeq_family <- tax_glom(physeq_rarefied, taxrank = "Family", NArm = TRUE)
+physeq_family_rel <- transform_sample_counts(physeq_family, function(x) x / sum(x) * 100)
+plot_bar(physeq_family_rel, fill = "Family") +
+  facet_wrap(~Age, scales = "free_x") +
+  labs(title = "Family-Level Composition Across Age Groups") +
+  theme_bw()
+```
+
+```{r plot-age-order-fix}
+
+# Calculate multiple metrics
+alpha_full <- estimate_richness(physeq_rarefied, 
+	measures = c("Observed", "Chao1", "Shannon", "Simpson", "InvSimpson"))
+
+# Merge with metadata
+alpha_full_meta <- cbind(alpha_full, as.data.frame(sample_data(physeq_rarefied)))
+
+# --- CRITICAL FIX: Order the Age Factor ---
+
+# Define the full chronological order of the age categories
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+
+# Apply the chronological order to the Age column in the data frame
+alpha_full_meta$Age <- factor(alpha_full_meta$Age, levels = age_order)
+
+# --- Statistical tests (Now using the ordered factor) ---
+kruskal.test(Shannon ~ FeedStatus, data = alpha_full_meta)
+kruskal.test(Observed ~ Age, data = alpha_full_meta)
+
+# Dunn's post-hoc test if Kruskal-Wallis is significant
+library(FSA)
+dunnTest(Shannon ~ Age, data = alpha_full_meta, method = "bonferroni")
+
+# --- Visualization (Will now be in chronological order) ---
+p_shannon_age_feed <- ggplot(alpha_full_meta, aes(x = Age, y = Shannon, fill = FeedStatus)) +
+	geom_boxplot() +
+    geom_point(position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.75), alpha = 0.6) + # Add points for detail
+    scale_fill_manual(values = c("No" = "#1F78B4", "Yes" = "#E31A1C")) + # Custom colors
+	labs(
+        title = "Shannon Diversity Across Age and Feed Status",
+        subtitle = "Age is ordered chronologically",
+        x = "Age Group",
+        y = "Shannon Diversity Index",
+        fill = "Fed Status"
+    ) +
+	theme_bw(base_size = 14) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_shannon_age_feed)
+```
+
+````{r}
+# Calculate Bray-Curtis distance
+bray_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# Full PERMANOVA model
+perm_full <- adonis2(bray_dist ~ FeedStatus + Age + MotherID, 
+                     data = as(sample_data(physeq_rarefied), "data.frame"), 
+                     permutations = 999)
+print(perm_full)
+
+# PCoA ordination
+pcoa <- ordinate(physeq_rarefied, method = "PCoA", distance = bray_dist)
+plot_ordination(physeq_rarefied, pcoa, color = "FeedStatus", shape = "Age") +
+  stat_ellipse() +
+  labs(title = "PCoA: Community Structure by Environment and Age") +
+  theme_bw()
+
+# By maternal ID
+plot_ordination(physeq_rarefied, pcoa, color = "MotherID") +
+  labs(title = "PCoA: Maternal Influence on Microbiome") +
+  theme_bw()
+````
+
+```{r}
+# Already completed
+disp_feed <- betadisper(bray_dist, sample_data(physeq_rarefied)$FeedStatus)
+anova(disp_feed)
+
+# Visualize
+plot(disp_feed, main = "Dispersion by Feed Status")
+```
+
+```{r}
+# Extract significant OTUs
+sig_otus <- rownames(res)[which(res$padj < 0.05 & !is.na(res$padj))]
+
+# Match to taxonomy
+sig_tax <- as.data.frame(tax_table(physeq)[sig_otus, ])
+sig_tax$OTU <- rownames(sig_tax)
+
+# Merge with DESeq2 results
+sig_results <- cbind(as.data.frame(res[sig_otus, ]), sig_tax)
+write.csv(sig_results, "significant_OTUs_taxonomy.csv")
+
+# Visualize top OTUs
+library(ggplot2)
+top_otus <- head(sig_otus, 10)
+top_otu_abund <- prune_taxa(top_otus, physeq_rarefied)
+plot_bar(top_otu_abund, fill = "Genus") +
+  facet_wrap(~FeedStatus) +
+  labs(title = "Top 10 Differentially Abundant OTUs") +
+  theme_bw()
+```
+
+```{r}
+library(indicspecies)
+
+# Convert OTU table to matrix
+otu_matrix <- as(otu_table(physeq_rarefied), "matrix")
+if(!taxa_are_rows(physeq_rarefied)) otu_matrix <- t(otu_matrix)
+
+# Run indicator species analysis
+indic_result <- multipatt(t(otu_matrix), 
+                          cluster = sample_data(physeq_rarefied)$FeedStatus, 
+                          control = how(nperm = 999))
+summary(indic_result)
+
+# Extract significant indicators
+indic_sig <- indic_result$sign[indic_result$sign$p.value < 0.05, ]
+```
+
+```{r}
+
+# Subset to mother samples (if available in dataset)
+# Assuming mothers are labeled in metadata
+mothers <- subset_samples(physeq_rarefied, SampleType == "MotherID")
+offspring <- subset_samples(physeq_rarefied, SampleType != "MotherID")
+
+# Calculate shared OTUs between each mother and her offspring
+# This requires custom code to loop through MotherID groups
+
+library(dplyr)
+shared_otus <- data.frame()
+
+for(mom_id in unique(sample_data(offspring)$MotherID)) {
+  mom_sample <- subset_samples(mothers, MotherID == mom_id)
+  off_samples <- subset_samples(offspring, MotherID == mom_id)
+  
+  mom_otus <- taxa_names(prune_taxa(taxa_sums(mom_sample) > 0, mom_sample))
+  off_otus <- taxa_names(prune_taxa(taxa_sums(off_samples) > 0, off_samples))
+  
+  shared <- length(intersect(mom_otus, off_otus))
+  total_off <- length(off_otus)
+  
+  shared_otus <- rbind(shared_otus, data.frame(
+    MotherID = mom_id,
+    Shared_OTUs = shared,
+    Total_Offspring_OTUs = total_off,
+    Percent_Shared = (shared / total_off) * 100
+  ))
+}
+
+print(shared_otus)
+```
+
+```{r}
+# Define core as OTUs present in ≥80% of samples
+core_otus <- filter_taxa(physeq_rarefied, function(x) sum(x > 0) >= (0.8 * length(x)), TRUE)
+core_tax <- as.data.frame(tax_table(core_otus))
+print(core_tax)
+
+# Compare core between groups
+core_sterile <- filter_taxa(subset_samples(physeq_rarefied, FeedStatus == "No"), 
+                             function(x) sum(x > 0) >= (0.8 * length(x)), TRUE)
+core_muck <- filter_taxa(subset_samples(physeq_rarefied, FeedStatus == "Yes"), 
+                          function(x) sum(x > 0) >= (0.8 * length(x)), TRUE)
+
+# Venn diagram of shared vs unique core OTUs
+#install.packages("VennDiagram") # Uncomment if not installed
+library(VennDiagram)
+venn.diagram(
+  x = list(Sterile = taxa_names(core_sterile), Muck = taxa_names(core_muck)),
+  filename = "core_microbiome_venn.png",
+  fill = c("lightblue", "pink")
+)
+
+```
