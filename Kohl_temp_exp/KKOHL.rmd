@@ -22,6 +22,7 @@ library(ggplot2)
 library(patchwork)
 library(ggpubr)
 library(DESeq2)
+library(indicspecies) # For Indicator Species Analysis
 # Set a consistent theme for plots
 theme_set(theme_bw(base_size = 12))
 ```
@@ -349,7 +350,94 @@ if (nrow(sig_taxa) > 0) {
   print("No taxa found to be significantly different at FDR < 0.05")
 }
 ```
-# 10. Summary Statistics
+# 10. Indicator Species Analysis
+An alternative to DESeq2 that looks for taxa that are "indicators" of a specific group (high fidelity and specificity). This is often more sensitive for presence/absence patterns.
+```{r indicator-species}
+# Subset to relevant ages (7+days, 15+days, 20+days)
+physeq_indic <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days", "20+days"))
+physeq_indic <- prune_taxa(taxa_sums(physeq_indic) > 0, physeq_indic)
+# Extract OTU table (species as columns)
+otu_indic <- as(otu_table(physeq_indic), "matrix")
+if(taxa_are_rows(physeq_indic)) { otu_indic <- t(otu_indic) }
+# Extract grouping vector
+groups_indic <- sample_data(physeq_indic)$SampleType
+# Run Indicator Species Analysis
+indval <- multipatt(otu_indic, groups_indic, control = how(nperm=999))
+# Summary of significant indicators
+summary(indval, alpha = 0.05)
+# Extract and annotate significant results
+if (!is.null(indval$sign)) {
+  sig_ind <- indval$sign %>%
+    filter(p.value < 0.05)
+  
+  if (nrow(sig_ind) > 0) {
+    # Add taxonomy
+    tax_ind <- as.data.frame(tax_table(physeq_indic)[rownames(sig_ind), ])
+    results_ind <- cbind(sig_ind, tax_ind)
+    
+    print("Significant Indicator Species:")
+    knitr::kable(results_ind[, c("stat", "p.value", "Phylum", "Family", "Genus")], 
+                 caption = "Table 4: Indicator Species Analysis")
+    write.csv(results_ind, "Table4_IndicatorSpecies.csv")
+  } else {
+    print("No significant indicator species found.")
+  }
+}
+```
+# 11. Core Microbiome Analysis
+Identifying the "Core" microbiome: taxa present in at least 50% of samples within a treatment group. This defines the stable resident community.
+```{r core-microbiome, fig.height=8, fig.width=10}
+# Function to get core taxa names
+get_core_taxa <- function(physeq_obj, detection_threshold = 0, prevalence_threshold = 0.5) {
+  # Transform to relative abundance
+  physeq_rel <- transform_sample_counts(physeq_obj, function(x) x / sum(x))
+  
+  # Filter
+  core_taxa <- filter_taxa(physeq_rel, function(x) sum(x > detection_threshold) > (prevalence_threshold * length(x)), TRUE)
+  return(taxa_names(core_taxa))
+}
+# Get core for Muck
+physeq_muck <- subset_samples(physeq_rarefied, SampleType == "Muck" & Age %in% c("7+days", "15+days", "20+days"))
+core_muck <- get_core_taxa(physeq_muck)
+# Get core for Sterile
+physeq_sterile <- subset_samples(physeq_rarefied, SampleType == "Sterile" & Age %in% c("7+days", "15+days", "20+days"))
+core_sterile <- get_core_taxa(physeq_sterile)
+# Find shared and unique core taxa
+shared_core <- intersect(core_muck, core_sterile)
+unique_muck <- setdiff(core_muck, core_sterile)
+unique_sterile <- setdiff(core_sterile, core_muck)
+cat("Core Taxa Summary (Prevalence > 50%):\n")
+cat("Shared Core:", length(shared_core), "taxa\n")
+cat("Unique to Muck Core:", length(unique_muck), "taxa\n")
+cat("Unique to Sterile Core:", length(unique_sterile), "taxa\n")
+# Visualize Core Taxa (Heatmap of these specific taxa)
+all_core <- c(shared_core, unique_muck, unique_sterile)
+if(length(all_core) > 0) {
+  physeq_core <- prune_taxa(all_core, physeq_rarefied)
+  
+  p_core <- plot_heatmap(physeq_core, 
+                         method = "NMDS", 
+                         distance = "bray", 
+                         sample.label = "SampleType", 
+                         taxa.label = "Genus") +
+    facet_grid(~ SampleType, scales = "free_x", space = "free") +
+    scale_fill_gradient(low = "white", high = "darkgreen", na.value = "white") +
+    labs(title = "Figure 6: Core Microbiome Heatmap (Prevalence > 50%)")
+  
+  print(p_core)
+  ggsave("Fig6_CoreMicrobiome.pdf", p_core, width = 10, height = 8)
+  
+  # Save list of core taxa
+  core_tax_table <- as.data.frame(tax_table(physeq_core))
+  core_tax_table$Core_Status <- case_when(
+    rownames(core_tax_table) %in% shared_core ~ "Shared",
+    rownames(core_tax_table) %in% unique_muck ~ "Muck_Only",
+    rownames(core_tax_table) %in% unique_sterile ~ "Sterile_Only"
+  )
+  write.csv(core_tax_table, "Table5_CoreTaxa.csv")
+}
+```
+# 12. Summary Statistics
 ```{r summary-stats}
 summary_stats <- alpha_data_rarefied %>%
   group_by(SampleType, Age) %>%
