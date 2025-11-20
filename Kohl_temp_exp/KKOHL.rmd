@@ -22,6 +22,7 @@ library(ggplot2)
 library(patchwork)
 library(ggpubr)
 library(DESeq2)
+library(kableExtra)
 library(indicspecies) # For Indicator Species Analysis
 # Set a consistent theme for plots
 theme_set(theme_bw(base_size = 12))
@@ -353,6 +354,13 @@ if (nrow(sig_taxa) > 0) {
 # 10. Indicator Species Analysis
 An alternative to DESeq2 that looks for taxa that are "indicators" of a specific group (high fidelity and specificity). This is often more sensitive for presence/absence patterns.
 ```{r indicator-species}
+# Helper function to get readable taxonomy
+get_tax_label <- function(physeq_obj, otu_id) {
+  tax_df <- as.data.frame(tax_table(physeq_obj))
+  tax_row <- tax_df[otu_id, ]
+  label <- paste(tax_row$Family, tax_row$Genus, sep = "_")
+  return(label)
+}
 # Subset to relevant ages (7+days, 15+days, 20+days)
 physeq_indic <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days", "20+days"))
 physeq_indic <- prune_taxa(taxa_sums(physeq_indic) > 0, physeq_indic)
@@ -363,8 +371,6 @@ if(taxa_are_rows(physeq_indic)) { otu_indic <- t(otu_indic) }
 groups_indic <- sample_data(physeq_indic)$SampleType
 # Run Indicator Species Analysis
 indval <- multipatt(otu_indic, groups_indic, control = how(nperm=999))
-# Summary of significant indicators
-summary(indval, alpha = 0.05)
 # Extract and annotate significant results
 if (!is.null(indval$sign)) {
   sig_ind <- indval$sign %>%
@@ -373,17 +379,33 @@ if (!is.null(indval$sign)) {
   if (nrow(sig_ind) > 0) {
     # Add taxonomy
     tax_ind <- as.data.frame(tax_table(physeq_indic)[rownames(sig_ind), ])
+    
+    # Create readable label
+    tax_ind$Label <- paste(rownames(tax_ind), tax_ind$Family, tax_ind$Genus, sep = " : ")
+    
     results_ind <- cbind(sig_ind, tax_ind)
     
     print("Significant Indicator Species:")
-    knitr::kable(results_ind[, c("stat", "p.value", "Phylum", "Family", "Genus")], 
-                 caption = "Table 4: Indicator Species Analysis")
+    # Styled table using kableExtra for better HTML appearance
+    print(
+      knitr::kable(
+        results_ind[, c("stat", "p.value", "Label")],
+        caption = "Table 4: Indicator Species Analysis",
+        col.names = c("Indicator Stat", "p-value", "Taxon"),
+        align = "c"
+      ) %>%
+        kableExtra::kable_styling(
+          bootstrap_options = c("striped", "hover", "condensed"),
+          full_width = FALSE
+        )
+    )
     write.csv(results_ind, "Table4_IndicatorSpecies.csv")
   } else {
     print("No significant indicator species found.")
   }
 }
 ```
+
 # 11. Core Microbiome Analysis
 Identifying the "Core" microbiome: taxa present in at least 50% of samples within a treatment group. This defines the stable resident community.
 ```{r core-microbiome, fig.height=8, fig.width=10}
@@ -415,26 +437,59 @@ all_core <- c(shared_core, unique_muck, unique_sterile)
 if(length(all_core) > 0) {
   physeq_core <- prune_taxa(all_core, physeq_rarefied)
   
+  # Update taxa names to be readable for the plot
+  tax_table(physeq_core) <- cbind(tax_table(physeq_core), 
+                                  Label = paste(tax_table(physeq_core)[,"Family"], 
+                                                tax_table(physeq_core)[,"Genus"], sep="_"))
+  
   p_core <- plot_heatmap(physeq_core, 
                          method = "NMDS", 
                          distance = "bray", 
                          sample.label = "SampleType", 
-                         taxa.label = "Genus") +
+                         taxa.label = "Label") + # Use the new Label column
     facet_grid(~ SampleType, scales = "free_x", space = "free") +
     scale_fill_gradient(low = "white", high = "darkgreen", na.value = "white") +
-    labs(title = "Figure 6: Core Microbiome Heatmap (Prevalence > 50%)")
+    labs(title = "Figure 6: Core Microbiome Heatmap (Prevalence > 50%)") +
+    theme(axis.text.y = element_text(size = 8)) # Ensure labels are readable
   
   print(p_core)
   ggsave("Fig6_CoreMicrobiome.pdf", p_core, width = 10, height = 8)
   
-  # Save list of core taxa
+  # Save list of core taxa with names
   core_tax_table <- as.data.frame(tax_table(physeq_core))
   core_tax_table$Core_Status <- case_when(
     rownames(core_tax_table) %in% shared_core ~ "Shared",
     rownames(core_tax_table) %in% unique_muck ~ "Muck_Only",
     rownames(core_tax_table) %in% unique_sterile ~ "Sterile_Only"
   )
-  write.csv(core_tax_table, "Table5_CoreTaxa.csv")
+  
+  # Create readable label for the table
+  core_tax_table$Label <- paste(rownames(core_tax_table), core_tax_table$Family, core_tax_table$Genus, sep = " : ")
+  
+  print("Core Microbiome Taxa:")
+  # Prepare a tidy table with separate taxonomic columns
+  core_tax_table <- core_tax_table %>%
+    dplyr::select(Core_Status, Family, Genus, Label) %>%
+    dplyr::rename(
+      "Core Status" = Core_Status,
+      "Family" = Family,
+      "Genus" = Genus,
+      "Taxon (OTU : Family : Genus)" = Label
+    )
+  
+  # Styled table using kableExtra for a polished HTML look
+  print(
+    knitr::kable(core_tax_table,
+                 caption = "Table 5: Core Microbiome Members (Prevalence > 50%)",
+                 align = "c") %>%
+      kableExtra::kable_styling(
+        bootstrap_options = c("striped", "hover", "condensed"),
+        full_width = FALSE
+      )
+  )
+  
+  # Save the formatted table for manuscript use
+  write.csv(core_tax_table, "Table5_CoreTaxa.csv", row.names = FALSE)
 }
 ```
 # 12. Summary Statistics
@@ -454,10 +509,26 @@ summary_stats <- alpha_data_rarefied %>%
     Shannon_summary = paste0(round(Shannon_mean, 2), " ± ", round(Shannon_se, 2)),
     Observed_summary = paste0(round(Observed_mean, 1), " ± ", round(Observed_sd, 1))
   )
-knitr::kable(summary_stats, caption = "Table 2: Summary Statistics")
-write.csv(summary_stats, "Table2_SummaryStats.csv", row.names = FALSE)
+# Select and rename columns for a "pretty" publication-ready table
+pretty_table <- summary_stats %>%
+  dplyr::select(SampleType, Age, n, Shannon_summary, Observed_summary) %>%
+  dplyr::rename(
+    "Treatment" = SampleType,
+    "Developmental Stage" = Age,
+    "Sample Size (n)" = n,
+    "Shannon Index (Mean ± SE)" = Shannon_summary,
+    "Observed OTUs (Mean ± SD)" = Observed_summary
+  )
+print(knitr::kable(pretty_table, 
+             caption = "Table 2: Summary Statistics of Alpha Diversity",
+             align = "c"))
+# Save the raw stats
+write.csv(summary_stats, "Table2_SummaryStats_Raw.csv", row.names = FALSE)
+# Save the pretty formatted table for the manuscript
+write.csv(pretty_table, "Table2_SummaryStats_Formatted.csv", row.names = FALSE)
 ```
-# 11. Session Info
+# 13. Session Info
 ```{r session-info}
 sessionInfo()
 ```
+

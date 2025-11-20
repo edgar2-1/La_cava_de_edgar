@@ -25,6 +25,7 @@ library(tidyverse)
 library(ggplot2)
 library(patchwork)
 library(ggpubr)
+library(kableExtra) # For enhanced table styling
 library(DESeq2)
 library(indicspecies) # For Indicator Species Analysis
 
@@ -470,9 +471,19 @@ if (!is.null(indval$sign)) {
     results_ind <- cbind(sig_ind, tax_ind)
     
     print("Significant Indicator Species:")
-    # Display the readable Label instead of just row names
-    knitr::kable(results_ind[, c("stat", "p.value", "Label")], 
-                 caption = "Table 4: Indicator Species Analysis")
+    # Styled table using kableExtra for better HTML appearance
+    print(
+      knitr::kable(
+        results_ind[, c("stat", "p.value", "Label")],
+        caption = "Table 4: Indicator Species Analysis",
+        col.names = c("Indicator Stat", "p-value", "Taxon"),
+        align = "c"
+      ) %>%
+        kableExtra::kable_styling(
+          bootstrap_options = c("striped", "hover", "condensed"),
+          full_width = FALSE
+        )
+    )
     write.csv(results_ind, "Table4_IndicatorSpecies.csv")
   } else {
     print("No significant indicator species found.")
@@ -543,7 +554,34 @@ if(length(all_core) > 0) {
     rownames(core_tax_table) %in% unique_muck ~ "Muck_Only",
     rownames(core_tax_table) %in% unique_sterile ~ "Sterile_Only"
   )
-  write.csv(core_tax_table, "Table5_CoreTaxa.csv")
+  
+  # Create readable label for the table
+  core_tax_table$Label <- paste(rownames(core_tax_table), core_tax_table$Family, core_tax_table$Genus, sep = " : ")
+  
+  print("Core Microbiome Taxa:")
+  # Prepare a tidy table with separate taxonomic columns
+  core_tax_table <- core_tax_table %>%
+    dplyr::select(Core_Status, Family, Genus, Label) %>%
+    dplyr::rename(
+      "Core Status" = Core_Status,
+      "Family" = Family,
+      "Genus" = Genus,
+      "Taxon (OTU : Family : Genus)" = Label
+    )
+  
+  # Styled table using kableExtra for a polished HTML look
+  print(
+    knitr::kable(core_tax_table,
+                 caption = "Table 5: Core Microbiome Members (Prevalence > 50%)",
+                 align = "c") %>%
+      kableExtra::kable_styling(
+        bootstrap_options = c("striped", "hover", "condensed"),
+        full_width = FALSE
+      )
+  )
+  
+  # Save the formatted table for manuscript use
+  write.csv(core_tax_table, "Table5_CoreTaxa.csv", row.names = FALSE)
 }
 ```
 
@@ -566,8 +604,26 @@ summary_stats <- alpha_data_rarefied %>%
     Observed_summary = paste0(round(Observed_mean, 1), " ± ", round(Observed_sd, 1))
   )
 
-knitr::kable(summary_stats, caption = "Table 2: Summary Statistics")
-write.csv(summary_stats, "Table2_SummaryStats.csv", row.names = FALSE)
+# Select and rename columns for a "pretty" publication-ready table
+pretty_table <- summary_stats %>%
+  dplyr::select(SampleType, Age, n, Shannon_summary, Observed_summary) %>%
+  dplyr::rename(
+    "Treatment" = SampleType,
+    "Developmental Stage" = Age,
+    "Sample Size (n)" = n,
+    "Shannon Index (Mean ± SE)" = Shannon_summary,
+    "Observed OTUs (Mean ± SD)" = Observed_summary
+  )
+
+print(knitr::kable(pretty_table, 
+             caption = "Table 2: Summary Statistics of Alpha Diversity",
+             align = "c"))
+
+# Save the raw stats
+write.csv(summary_stats, "Table2_SummaryStats_Raw.csv", row.names = FALSE)
+
+# Save the pretty formatted table for the manuscript
+write.csv(pretty_table, "Table2_SummaryStats_Formatted.csv", row.names = FALSE)
 ```
 
 # 11. Session Info
