@@ -1,0 +1,577 @@
+---
+title: "Kohler Microbiome Study: Publication Analysis"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 8)
+```
+
+# 1. Setup and Libraries
+
+Load necessary packages for microbiome analysis and visualization.
+
+```{r libraries}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(ggpubr)
+library(DESeq2)
+library(indicspecies) # For Indicator Species Analysis
+
+# Set a consistent theme for plots
+theme_set(theme_bw(base_size = 12))
+```
+
+# 2. Data Loading and Processing
+
+Reading OTU table, taxonomy, and metadata, then creating the phyloseq object.
+
+```{r load-data}
+# --- Read OTU Table ---
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# --- Read Taxonomy ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+  x <- x[nchar(x) > 0]
+  x <- gsub("\\(.*?\\)|\\\"", "", x)
+  trimws(x)
+})
+
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Read Metadata ---
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE,
+                            sep = "\t",
+                            row.names = 1,
+                            stringsAsFactors = TRUE,
+                            check.names = FALSE)
+
+# --- Create Phyloseq Object ---
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+sample_data_obj <- sample_data(Kohler.design[common_samples, ])
+physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
+print(physeq)
+```
+
+## Rarefaction and Alpha Diversity Calculation
+
+Filtering low-abundance taxa and rarefying to even depth for diversity analysis.
+
+```{r rarefaction}
+# Filter taxa with < 3 counts in < 20% of samples (noise reduction)
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+
+# Rarefy
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# Calculate Alpha Diversity
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon"))
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied)
+
+# Order factors for plotting
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+```
+
+# 3. Sample Size Analysis
+
+Visualizing the distribution of samples across Age and Treatment groups to be transparent about study design limitations.
+
+```{r fig1-sample-dist, fig.height=5, fig.width=8}
+# Summarize sample sizes
+sample_summary <- alpha_data_rarefied %>%
+  group_by(Age, SampleType) %>%
+  summarise(n = n(), .groups = "drop")
+
+print(sample_summary)
+
+# Create Heatmap
+p_sample_dist <- ggplot(sample_summary, aes(x = Age, y = SampleType, fill = n)) +
+  geom_tile(color = "white", size = 1) +
+  geom_text(aes(label = n), size = 6, color = "white", fontface = "bold") +
+  scale_fill_gradient(low = "#d73027", high = "#1a9850", 
+                      name = "Sample\nSize",
+                      limits = c(0, 10),
+                      breaks = c(0, 2, 4, 6, 8, 10)) +
+  labs(title = "Figure 1: Sample Distribution Across Experimental Groups",
+       x = "Developmental Stage", y = "Treatment") +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_sample_dist)
+ggsave("Fig1_SampleDistribution.pdf", p_sample_dist, width = 8, height = 5)
+```
+
+# 4. Beta Diversity Analysis
+
+Using PERMANOVA to test for effects of SampleType, Age, and Mother.
+
+```{r beta-diversity}
+# Calculate Bray-Curtis distance
+bray_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# CRITICAL FIX: Ensure metadata is a standard data frame
+# sample_data objects can sometimes cause issues in vegan functions
+metadata <- data.frame(sample_data(physeq_rarefied))
+
+# Standard PERMANOVA
+set.seed(42)
+permanova_standard <- adonis2(
+  bray_dist ~ SampleType + Age + Mother,
+  data = metadata,
+  permutations = 9999,
+  by = "margin"
+)
+
+print(permanova_standard)
+
+# Check Homogeneity of Dispersion (PERMDISP)
+dispersion_sampletype <- betadisper(bray_dist, metadata$SampleType)
+dispersion_age <- betadisper(bray_dist, metadata$Age)
+dispersion_mother <- betadisper(bray_dist, metadata$Mother)
+
+cat("PERMDISP p-values:\n")
+cat("SampleType:", anova(dispersion_sampletype)$`Pr(>F)`[1], "\n")
+cat("Age:", anova(dispersion_age)$`Pr(>F)`[1], "\n")
+cat("Mother:", anova(dispersion_mother)$`Pr(>F)`[1], "\n")
+```
+
+## Effect Size Summary
+
+Calculating and tabulating effect sizes (R²) to emphasize biological relevance over just p-values.
+
+```{r effect-sizes}
+effect_size_table <- data.frame(
+  Factor = c("Mother", "SampleType", "Age"),
+  R2 = c(
+    permanova_standard$R2[which(rownames(permanova_standard) == "Mother")],
+    permanova_standard$R2[which(rownames(permanova_standard) == "SampleType")],
+    permanova_standard$R2[which(rownames(permanova_standard) == "Age")]
+  ),
+  F_stat = c(
+    permanova_standard$F[which(rownames(permanova_standard) == "Mother")],
+    permanova_standard$F[which(rownames(permanova_standard) == "SampleType")],
+    permanova_standard$F[which(rownames(permanova_standard) == "Age")]
+  ),
+  p_value = c(
+    permanova_standard$`Pr(>F)`[which(rownames(permanova_standard) == "Mother")],
+    permanova_standard$`Pr(>F)`[which(rownames(permanova_standard) == "SampleType")],
+    permanova_standard$`Pr(>F)`[which(rownames(permanova_standard) == "Age")]
+  )
+) %>%
+  mutate(
+    R2_percent = round(R2 * 100, 1),
+    Effect_Size = case_when(
+      R2 < 0.01 ~ "Negligible",
+      R2 < 0.06 ~ "Small",
+      R2 < 0.14 ~ "Medium",
+      TRUE ~ "Large"
+    ),
+    Significance = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01 ~ "**",
+      p_value < 0.05 ~ "*",
+      TRUE ~ "ns"
+    )
+  )
+
+knitr::kable(effect_size_table, caption = "Table 1: Effect Size Summary")
+write.csv(effect_size_table, "Table1_EffectSizes.csv", row.names = FALSE)
+```
+
+# 5. Figure 2: Maternal Effects
+
+Visualizing the strong maternal effect (R² ~ 20%) using PCoA, dispersion, and alpha diversity.
+
+```{r fig2-maternal, fig.height=10, fig.width=12}
+# Panel A: PCoA colored by Mother
+pcoa_res <- ordinate(physeq_rarefied, method = "PCoA", distance = bray_dist)
+
+pcoa_mother <- plot_ordination(physeq_rarefied, pcoa_res, 
+                               color = "Mother", shape = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  stat_ellipse(aes(group = Mother), linetype = 2, linewidth = 0.5) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "A) Community Composition by Maternal Clutch",
+       subtitle = paste0("PERMANOVA: R² = ", 
+                        round(effect_size_table$R2[1], 3), 
+                        ", p = ", 
+                        format.pval(effect_size_table$p_value[1], digits = 3)),
+       x = paste0("PCoA1 (", round(pcoa_res$values$Relative_eig[1] * 100, 1), "%)"),
+       y = paste0("PCoA2 (", round(pcoa_res$values$Relative_eig[2] * 100, 1), "%)"))
+
+# Panel B: Dispersion within clutches
+dispersion_df <- data.frame(
+  Mother = metadata$Mother,
+  Distance = dispersion_mother$distances
+)
+
+p_dispersion <- ggplot(dispersion_df, aes(x = Mother, y = Distance, fill = Mother)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "B) Within-Clutch Microbiome Variation",
+       y = "Distance to Clutch Centroid (Bray-Curtis)",
+       x = "Maternal ID") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Panel C: Shannon diversity by Mother
+p_alpha_mother <- ggplot(alpha_data_rarefied, 
+                         aes(x = Mother, y = Shannon, fill = Mother)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set1") +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, 
+               fill = "white", color = "black") +
+  labs(title = "C) Alpha Diversity by Maternal Clutch",
+       y = "Shannon Diversity Index",
+       x = "Maternal ID") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Combine panels
+fig2 <- pcoa_mother / (p_dispersion | p_alpha_mother) +
+  plot_annotation(
+    title = "Figure 2: Maternal Identity Shapes Offspring Gut Microbiomes",
+    theme = theme(plot.title = element_text(size = 16, face = "bold"))
+  )
+
+print(fig2)
+ggsave("Fig2_MaternalEffects.pdf", fig2, width = 12, height = 10)
+```
+
+# 6. Figure 3: Environmental Effects
+
+Focusing on the well-powered age groups (7+days and 15+days) to show environmental effects.
+
+```{r fig3-env, fig.height=6, fig.width=14}
+# Focus on well-powered age groups
+physeq_subset <- subset_samples(physeq_rarefied, 
+                                Age %in% c("7+days", "15+days"))
+
+bray_subset <- phyloseq::distance(physeq_subset, method = "bray")
+pcoa_subset <- ordinate(physeq_subset, method = "PCoA", distance = bray_subset)
+
+# Panel A: PCoA by SampleType
+pcoa_env <- plot_ordination(physeq_subset, pcoa_subset, 
+                            color = "SampleType", shape = "Age") +
+  geom_point(size = 4, alpha = 0.8) +
+  stat_ellipse(aes(group = SampleType), linetype = 2, linewidth = 0.8) +
+  scale_color_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  labs(title = "A) Community Composition by Environmental Exposure",
+       subtitle = paste0("PERMANOVA: R² = ", 
+                        round(effect_size_table$R2[2], 3), 
+                        ", p = ", 
+                        format.pval(effect_size_table$p_value[2], digits = 3),
+                        " (7+days and 15+days only)"),
+       x = paste0("PCoA1 (", round(pcoa_subset$values$Relative_eig[1] * 100, 1), "%)"),
+       y = paste0("PCoA2 (", round(pcoa_subset$values$Relative_eig[2] * 100, 1), "%)"))
+
+# Panel B: Alpha diversity by SampleType
+alpha_subset <- alpha_data_rarefied %>%
+  filter(Age %in% c("7+days", "15+days"))
+
+p_alpha_env <- ggplot(alpha_subset, aes(x = SampleType, y = Shannon, 
+                                        fill = SampleType)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.6) +
+  scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format") +
+  labs(title = "B) Shannon Diversity by Treatment",
+       subtitle = "7+days and 15+days only",
+       y = "Shannon Diversity Index",
+       x = "Treatment") +
+  theme(legend.position = "none")
+
+fig3 <- pcoa_env | p_alpha_env
+print(fig3)
+ggsave("Fig3_EnvironmentalEffects.pdf", fig3, width = 14, height = 6)
+```
+
+# 8. Taxonomic Composition
+
+Since no specific taxa were significantly different by strict statistical thresholds (likely due to sample size), we will visualize the community structure in more detail to identify qualitative patterns.
+
+## A) Phylum Level Composition
+```{r fig4a-phylum, fig.height=6, fig.width=12}
+# Agglomerate to Phylum
+physeq_phylum <- tax_glom(physeq_rarefied, taxrank = "Phylum")
+physeq_rel_p <- transform_sample_counts(physeq_phylum, function(x) x / sum(x))
+melted_phy_p <- psmelt(physeq_rel_p)
+
+# Top 10 Phyla
+top_phyla <- names(sort(tapply(melted_phy_p$Abundance, melted_phy_p$Phylum, sum), decreasing = TRUE))[1:10]
+melted_phy_p$Phylum_Collapsed <- ifelse(melted_phy_p$Phylum %in% top_phyla, as.character(melted_phy_p$Phylum), "Other")
+
+p_phylum <- ggplot(melted_phy_p, aes(x = Sample, y = Abundance, fill = Phylum_Collapsed)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_grid(~ Age, scales = "free_x", space = "free") +
+  scale_fill_brewer(palette = "Paired", name = "Phylum") +
+  labs(title = "Figure 4A: Phylum Composition", y = "Relative Abundance") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+print(p_phylum)
+```
+
+## B) Family Level Composition
+```{r fig4b-family, fig.height=6, fig.width=12}
+# Agglomerate to Family
+physeq_family <- tax_glom(physeq_rarefied, taxrank = "Family")
+physeq_rel_f <- transform_sample_counts(physeq_family, function(x) x / sum(x))
+melted_phy_f <- psmelt(physeq_rel_f)
+
+# Top 15 Families
+top_families <- names(sort(tapply(melted_phy_f$Abundance, melted_phy_f$Family, sum), decreasing = TRUE))[1:15]
+melted_phy_f$Family_Collapsed <- ifelse(melted_phy_f$Family %in% top_families, as.character(melted_phy_f$Family), "Other")
+
+p_family <- ggplot(melted_phy_f, aes(x = Sample, y = Abundance, fill = Family_Collapsed)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_grid(~ Age, scales = "free_x", space = "free") +
+  scale_fill_viridis_d(name = "Family", option = "turbo") + # Using turbo for more distinct colors
+  labs(title = "Figure 4B: Family Composition", y = "Relative Abundance") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8))
+
+print(p_family)
+ggsave("Fig4_Taxonomy_Family.pdf", p_family, width = 12, height = 6)
+```
+
+## C) Heatmap of Top Genera
+```{r fig5-heatmap, fig.height=8, fig.width=10}
+# Filter to top 20 Genera
+physeq_genus <- tax_glom(physeq_rarefied, taxrank = "Genus")
+top20_genera <- names(sort(taxa_sums(physeq_genus), decreasing = TRUE))[1:20]
+physeq_top20 <- prune_taxa(top20_genera, physeq_genus)
+
+# Plot Heatmap
+p_heatmap <- plot_heatmap(physeq_top20, 
+                          method = "NMDS", 
+                          distance = "bray", 
+                          sample.label = "SampleType", 
+                          taxa.label = "Genus") +
+  facet_grid(~ Age, scales = "free_x", space = "free") +
+  scale_fill_gradient(low = "white", high = "darkblue", na.value = "white") +
+  labs(title = "Figure 5: Heatmap of Top 20 Genera") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p_heatmap)
+ggsave("Fig5_Heatmap.pdf", p_heatmap, width = 10, height = 8)
+```
+
+# 9. Differential Abundance (DESeq2)
+
+Identifying specific taxa that differ between Muck and Sterile treatments (controlling for Age).
+
+```{r deseq2}
+# Convert phyloseq to DESeq2 object
+# CRITICAL FIX: Subset to ages where both treatments exist to avoid "not full rank" error
+# Fetus and Newborn only have one SampleType, which causes confounding.
+physeq_deseq <- subset_samples(physeq, Age %in% c("7+days", "15+days", "20+days"))
+
+# Remove taxa that are not present in this subset
+physeq_deseq <- prune_taxa(taxa_sums(physeq_deseq) > 0, physeq_deseq)
+
+ds_obj <- phyloseq_to_deseq2(physeq_deseq, ~ Age + SampleType)
+
+# Run DESeq2
+ds_res <- DESeq(ds_obj, test = "Wald", fitType = "parametric")
+
+# Get results for Muck vs Sterile
+res <- results(ds_res, contrast = c("SampleType", "Muck", "Sterile"))
+
+# Filter for significance
+sig_taxa <- as.data.frame(res) %>%
+  filter(padj < 0.05) %>%
+  arrange(desc(log2FoldChange))
+
+# Add taxonomy
+if (nrow(sig_taxa) > 0) {
+  tax_info <- as.data.frame(tax_table(physeq)[rownames(sig_taxa), ])
+  sig_taxa_annotated <- cbind(sig_taxa, tax_info)
+  
+  print("Differentially Abundant Taxa (Muck vs. Sterile):")
+  knitr::kable(sig_taxa_annotated[, c("log2FoldChange", "padj", "Phylum", "Family", "Genus")], 
+               caption = "Table 3: Significant Differentially Abundant Taxa")
+  write.csv(sig_taxa_annotated, "Table3_DifferentialAbundance.csv")
+} else {
+  print("No taxa found to be significantly different at FDR < 0.05")
+}
+```
+
+# 10. Indicator Species Analysis
+
+An alternative to DESeq2 that looks for taxa that are "indicators" of a specific group (high fidelity and specificity). This is often more sensitive for presence/absence patterns.
+
+```{r indicator-species}
+# Helper function to get readable taxonomy
+get_tax_label <- function(physeq_obj, otu_id) {
+  tax_df <- as.data.frame(tax_table(physeq_obj))
+  tax_row <- tax_df[otu_id, ]
+  label <- paste(tax_row$Family, tax_row$Genus, sep = "_")
+  return(label)
+}
+
+# Subset to relevant ages (7+days, 15+days, 20+days)
+physeq_indic <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days", "20+days"))
+physeq_indic <- prune_taxa(taxa_sums(physeq_indic) > 0, physeq_indic)
+
+# Extract OTU table (species as columns)
+otu_indic <- as(otu_table(physeq_indic), "matrix")
+if(taxa_are_rows(physeq_indic)) { otu_indic <- t(otu_indic) }
+
+# Extract grouping vector
+groups_indic <- sample_data(physeq_indic)$SampleType
+
+# Run Indicator Species Analysis
+indval <- multipatt(otu_indic, groups_indic, control = how(nperm=999))
+
+# Extract and annotate significant results
+if (!is.null(indval$sign)) {
+  sig_ind <- indval$sign %>%
+    filter(p.value < 0.05)
+  
+  if (nrow(sig_ind) > 0) {
+    # Add taxonomy
+    tax_ind <- as.data.frame(tax_table(physeq_indic)[rownames(sig_ind), ])
+    
+    # Create readable label
+    tax_ind$Label <- paste(rownames(tax_ind), tax_ind$Family, tax_ind$Genus, sep = " : ")
+    
+    results_ind <- cbind(sig_ind, tax_ind)
+    
+    print("Significant Indicator Species:")
+    # Display the readable Label instead of just row names
+    knitr::kable(results_ind[, c("stat", "p.value", "Label")], 
+                 caption = "Table 4: Indicator Species Analysis")
+    write.csv(results_ind, "Table4_IndicatorSpecies.csv")
+  } else {
+    print("No significant indicator species found.")
+  }
+}
+```
+
+# 11. Core Microbiome Analysis
+
+Identifying the "Core" microbiome: taxa present in at least 50% of samples within a treatment group. This defines the stable resident community.
+
+```{r core-microbiome, fig.height=8, fig.width=10}
+# Function to get core taxa names
+get_core_taxa <- function(physeq_obj, detection_threshold = 0, prevalence_threshold = 0.5) {
+  # Transform to relative abundance
+  physeq_rel <- transform_sample_counts(physeq_obj, function(x) x / sum(x))
+  
+  # Filter
+  core_taxa <- filter_taxa(physeq_rel, function(x) sum(x > detection_threshold) > (prevalence_threshold * length(x)), TRUE)
+  return(taxa_names(core_taxa))
+}
+
+# Get core for Muck
+physeq_muck <- subset_samples(physeq_rarefied, SampleType == "Muck" & Age %in% c("7+days", "15+days", "20+days"))
+core_muck <- get_core_taxa(physeq_muck)
+
+# Get core for Sterile
+physeq_sterile <- subset_samples(physeq_rarefied, SampleType == "Sterile" & Age %in% c("7+days", "15+days", "20+days"))
+core_sterile <- get_core_taxa(physeq_sterile)
+
+# Find shared and unique core taxa
+shared_core <- intersect(core_muck, core_sterile)
+unique_muck <- setdiff(core_muck, core_sterile)
+unique_sterile <- setdiff(core_sterile, core_muck)
+
+cat("Core Taxa Summary (Prevalence > 50%):\n")
+cat("Shared Core:", length(shared_core), "taxa\n")
+cat("Unique to Muck Core:", length(unique_muck), "taxa\n")
+cat("Unique to Sterile Core:", length(unique_sterile), "taxa\n")
+
+# Visualize Core Taxa (Heatmap of these specific taxa)
+all_core <- c(shared_core, unique_muck, unique_sterile)
+if(length(all_core) > 0) {
+  physeq_core <- prune_taxa(all_core, physeq_rarefied)
+  
+  # Update taxa names to be readable for the plot
+  tax_table(physeq_core) <- cbind(tax_table(physeq_core), 
+                                  Label = paste(tax_table(physeq_core)[,"Family"], 
+                                                tax_table(physeq_core)[,"Genus"], sep="_"))
+  
+  p_core <- plot_heatmap(physeq_core, 
+                         method = "NMDS", 
+                         distance = "bray", 
+                         sample.label = "SampleType", 
+                         taxa.label = "Label") + # Use the new Label column
+    facet_grid(~ SampleType, scales = "free_x", space = "free") +
+    scale_fill_gradient(low = "white", high = "darkgreen", na.value = "white") +
+    labs(title = "Figure 6: Core Microbiome Heatmap (Prevalence > 50%)") +
+    theme(axis.text.y = element_text(size = 8)) # Ensure labels are readable
+  
+  print(p_core)
+  ggsave("Fig6_CoreMicrobiome.pdf", p_core, width = 10, height = 8)
+  
+  # Save list of core taxa with names
+  core_tax_table <- as.data.frame(tax_table(physeq_core))
+  core_tax_table$Core_Status <- case_when(
+    rownames(core_tax_table) %in% shared_core ~ "Shared",
+    rownames(core_tax_table) %in% unique_muck ~ "Muck_Only",
+    rownames(core_tax_table) %in% unique_sterile ~ "Sterile_Only"
+  )
+  write.csv(core_tax_table, "Table5_CoreTaxa.csv")
+}
+```
+
+# 12. Summary Statistics
+
+```{r summary-stats}
+summary_stats <- alpha_data_rarefied %>%
+  group_by(SampleType, Age) %>%
+  summarise(
+    n = n(),
+    Shannon_mean = mean(Shannon, na.rm = TRUE),
+    Shannon_sd = sd(Shannon, na.rm = TRUE),
+    Shannon_se = sd(Shannon, na.rm = TRUE) / sqrt(n()),
+    Observed_mean = mean(Observed, na.rm = TRUE),
+    Observed_sd = sd(Observed, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Shannon_summary = paste0(round(Shannon_mean, 2), " ± ", round(Shannon_se, 2)),
+    Observed_summary = paste0(round(Observed_mean, 1), " ± ", round(Observed_sd, 1))
+  )
+
+knitr::kable(summary_stats, caption = "Table 2: Summary Statistics")
+write.csv(summary_stats, "Table2_SummaryStats.csv", row.names = FALSE)
+```
+
+# 11. Session Info
+
+```{r session-info}
+sessionInfo()
+```

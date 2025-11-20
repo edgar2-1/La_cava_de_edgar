@@ -45,3 +45,7 @@ EquationCitations.csv
 *.png
 *.log
 *.txt
+*.csv
+*.docx
+*.bib
+*.pdf
