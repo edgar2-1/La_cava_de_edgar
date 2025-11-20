@@ -1,0 +1,477 @@
+---
+title: "tyre"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r message=FALSE}
+# --- 1. SETUP: Load Libraries ---
+# Load only the packages we need for this workflow
+# 'tidyverse' loads ggplot2, dplyr, tidyr, and tibble all at once
+library(phyloseq)
+library(vegan)
+library(tidyverse) 
+library(FSA) # For Dunn's Test
+
+# --- 2. LOAD DATA (Read each file only ONCE) ---
+
+# --- Read OTU Table ---
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# --- Read and Process Taxonomy ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+    x <- x[nchar(x) > 0]                # Remove empty strings
+    x <- gsub("\\(.*?\\)|\\\"", "", x) # Remove confidence scores and quotes
+    trimws(x)                           # Trim whitespace
+})
+
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Read Metadata ---
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE,
+                            sep = "\t",
+                            row.names = 1,
+                            stringsAsFactors = TRUE,
+                            check.names = FALSE)
+```
+
+```{r}
+# --- 3. CREATE PHYLOSEQ OBJECT ---
+
+# First, let's find the samples that are common to both the OTU table and the metadata
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+
+# Prune the OTU table to only these common samples
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+
+# Prune the metadata to only these common samples
+# (We need to convert Kohler.design to a sample_data object first)
+sample_data_obj <- sample_data(Kohler.design)
+sample_data_pruned <- prune_samples(common_samples, sample_data_obj)
+
+# Now, combine all three pruned/matched components
+physeq_rarefied <- phyloseq(otu_tab_pruned, tax_tab, sample_data_pruned)
+
+# Let's check the result
+physeq_rarefied
+
+```
+
+
+```{r}
+
+# --- 5. ALPHA DIVERSITY ANALYSIS ---
+
+# 1. Calculate metrics (Observed and Shannon) on the rarefied data
+alpha_data <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon"))
+
+# 2. Combine the new diversity scores with the sample metadata
+# The metadata is already stored inside the phyloseq object
+sample_metadata <- data.frame(sample_data(physeq_rarefied))
+
+# We can use cbind() to join them, as they are in the same sample order
+alpha_data_final <- cbind(alpha_data, sample_metadata)
+
+# 3. Let's inspect our final alpha diversity table
+head(alpha_data_final)
+```
+
+```{r}
+# --- 5.3 ALPHA DIVERSITY - STATISTICAL TEST ---
+
+# Run Kruskal-Wallis test for Shannon diversity by SampleType
+kruskal_test_result <- kruskal.test(Shannon ~ SampleType, data = alpha_data_final)
+kruskal.test(Shannon ~ Age, data = alpha_data_final)
+kruskal.test(Shannon ~ Feed, data = alpha_data_final)
+kruskal.test(Shannon ~ Mother, data = alpha_data_final)
+# Print the results
+print(kruskal_test_result)
+```
+```{r}
+library(ggplot2)
+
+ggplot(alpha_data_final, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_violin(alpha = 0.7) + 
+  geom_violin(fill = "white", size = .5) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Alpha Diversity (Shannon Index) by Sample Type",
+       x = "Sample Type",
+       y = "Shannon Index") +
+  theme(legend.position = "none")
+print
+```
+```{r}
+ggplot(alpha_data_final, aes(x = Mother, y = Shannon, color = Mother)) +
+  geom_boxplot(alpha = 0.3) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Alpha Diversity by Mother",
+       x = "Mother",
+       y = "Shannon Index") +
+  theme(legend.position = "none")
+```
+```{r}
+# Install ggpubr if needed
+# install.packages("ggpubr")
+library(ggpubr)
+
+tbl<- ggplot(alpha_data_final, aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_violin(alpha = 0.7, fill = "white", size = .5) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  stat_compare_means(method = "kruskal.test", label = "p.format") +
+  theme_minimal() +
+  labs(title = "Alpha Diversity",
+       x = "Sample Type",
+       y = "Shannon Index") +
+  theme(legend.position = "none")
+print(tbl)
+```
+
+```{r}
+# --- 6. BETA DIVERSITY ANALYSIS ---
+
+# 1. Calculate Bray-Curtis distance matrix from the rarefied data
+bray_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+
+# Let's look at the first few rows/columns of the matrix
+print(as.matrix(bray_dist)[1:5, 1:5])
+```
+
+```{r}
+# --- 6.2 BETA DIVERSITY - STATISTICAL TEST (PERMANOVA) ---
+
+# We need the vegan library for the adonis2 function
+library(vegan) 
+
+# Extract the metadata into a data frame
+sample_metadata <- data.frame(sample_data(physeq_rarefied))
+
+# Run the PERMANOVA test
+# We are testing if the 'bray_dist' matrix can be explained by
+# our metadata variables.
+set.seed(42) # Set seed for reproducible permutations
+permanova_res <- adonis2(
+  bray_dist ~ SampleType + Age + Mother,
+  data = sample_metadata,
+  permutations = 999,
+  by = "margin"
+)
+
+# Print the results table
+print(permanova_res)
+```
+```{r}
+ # --- 6.2 BETA DIVERSITY - STATISTICAL TEST (PERMANOVA) ---
+
+ # We need the vegan library for the adonis2 function
+ library(vegan) 
+
+
+sample_metadata <- data.frame(sample_data(physeq_rarefied))
+set.seed(42)
+permanova_res <- adonis2(bray_dist ~ SampleType + Age + Mother, data = sample_metadata, permutations = 999, by = "margin")
+print(permanova_res)
+```
+```{r}
+# --- 1. Load necessary libraries ---
+# You might need to install these first: install.packages("knitr"), install.packages("kableExtra")
+library(knitr)
+library(kableExtra)
+
+# --- 2. Create your data frame ---
+# This holds the data from your PERMANOVA results
+permanova_data <- data.frame(
+  Variable = c("SampleType", "Age", "Mother", "Total"),
+  `R² (Effect Size)` = c("10.27%", "7.90%", "20.7%", "45%"),
+  `p-value` = c("0.001", "0.021", "0.001", "N/A"),
+  Finding = c("Significant", "Significant", "Significant", "N/A")
+)
+
+# --- 3. Create the publication table ---
+# We pipe the data frame into kable()
+permanova_table <- kable(permanova_data, 
+                           format = "html", # Use "latex" if you're in RMarkdown/LaTeX
+                           caption = "PERMANOVA Results for Beta Diversity",
+                           col.names = c("Variable", "R² (Effect Size)", "p-value", "Finding"),
+                           align = "lccc") %>% # l=left, c=center
+  
+  # This adds professional styling
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = FALSE) %>%
+  
+  # Add a footnote for significance
+  footnote(general = "Significance determined at p < 0.05")
+
+# --- 4. Display the table ---
+# In RStudio, this will show up in the Viewer pane
+print(permanova_table)
+```
+```{r}
+# --- 6.3 BETA DIVERSITY - VALIDITY CHECK (PERMDISP) ---
+
+# 1. Run the betadisper test
+# We use the same distance matrix (bray_dist) and the group we want to test
+dispersion_test <- betadisper(bray_dist, sample_metadata$SampleType)
+print("--- Results for SampleType ---")
+# 2. Test the dispersion results with an ANOVA
+anova(dispersion_test)
+
+# Test dispersion for Age
+dispersion_age <- betadisper(bray_dist, sample_metadata$Age)
+print("--- Results for Age ---")
+anova(dispersion_age)
+
+# Test dispersion for Mother
+dispersion_mother <- betadisper(bray_dist, sample_metadata$Mother)
+print("--- Results for Mother ---")
+anova(dispersion_mother)
+```
+
+```{r}
+# --- 7. VISUALIZE BETA DIVERSITY (NMDS) ---
+
+# 1. Run the NMDS ordination
+# We use our distance matrix and set a seed for reproducibility
+set.seed(42)
+nmds_res <- metaMDS(bray_dist, k = 2, trymax = 100)
+
+# 2. Check the stress (lower is better, < 0.2 is good)
+print(nmds_res)
+```
+
+```{r}
+physeq_clean <- physeq_rarefied
+
+```
+
+```{r}
+# --- 2. Create an Efficient Bar Plot (Relative Abundance, Top N) ---
+library(ggplot2)
+library(dplyr)
+
+# 1. Transform counts to relative abundance (solves the y-axis problem)
+physeq_clean <- physeq_rarefied
+
+physeq_rel <- transform_sample_counts(physeq_clean, function(OTU) OTU / sum(OTU))
+
+# 2. Agglomerate taxa at the Phylum level
+physeq_phylum <- tax_glom(physeq_rel, "Phylum")
+
+# 3. Find the "Top 5" most abundant phyla overall
+# We'll use the dplyr package for this, as it's very clean
+top_phyla_names <- taxa_names(sort(taxa_sums(physeq_phylum), decreasing = TRUE)[1:5])
+
+# 4. Prune the phyloseq object to *only* these Top 5 phyla
+physeq_top5 <- prune_taxa(top_phyla_names, physeq_phylum)
+
+# 5. Create the bar plot using this new, smaller, relative-abundance object
+p <- plot_bar(physeq_top5, x = "SampleType", fill = "Phylum") +
+  facet_wrap(~SampleType, scales = "free_x") +
+  
+  # Change the y-axis label to show it's relative abundance
+  labs(title = "Taxonomic Composition by Phylum (Top 5)", y = "Relative Abundance") +
+  
+  # Use a better color palette (optional, but helps)
+  scale_fill_brewer(palette = "Paired")
+
+# Display the plot
+print(p)
+```
+
+```{r}
+# --- 1. Transform to Relative Abundance ---
+# We'll use our 'physeq_clean' object (the one with contaminants removed)
+# This function divides each OTU count by the total counts for that sample.
+
+physeq_rel <- transform_sample_counts(physeq_clean, function(OTU) OTU / sum(OTU))
+
+# Now, let's check the sample sums for our new object.
+# They should all be 1.0.
+print(head(sample_sums(physeq_rel)))
+
+# --- 2. Group Taxa by Phylum ---
+# This merges all OTUs that share the same Phylum
+physeq_phylum <- tax_glom(physeq_rel, "Phylum")
+
+# Let's see how many taxa (phyla) are in our new object
+physeq_phylum
+```
+```{r}
+# --- 2. Create the Bar Plot (Fixed) ---
+library(ggplot2)
+library(dplyr)
+
+# 1. Transform counts to relative abundance (0-1)
+physeq_rel <- transform_sample_counts(physeq_clean, function(OTU) OTU / sum(OTU))
+
+# 2. Merge all OTUs by their Phylum
+physeq_phylum <- tax_glom(physeq_rel, "Phylum")
+
+# 3. Find the Top 8 most abundant phyla
+top8_phyla <- names(sort(taxa_sums(physeq_phylum), decreasing = TRUE))[1:11]
+
+# 4. Prune the dataset to *only* these Top 8
+physeq_top11 <- prune_taxa(top8_phyla, physeq_phylum)
+
+# 5. "Melt" the data into a long data frame for ggplot
+#    THIS IS THE LINE THAT CREATES 'plot_data'
+plot_data <- psmelt(physeq_top8)
+
+# 6. Create the final plot (this part was replaced by your new code)
+# ... (old ggplot code) ...
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# --- 1. Define the Correct Chronological Order for 'Age' ---
+# This ensures the facets are plotted in the correct order
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+
+# We assume 'plot_data' is your "melted" Top 8 Phyla data frame
+
+# --- 2. Create the "Muck" Plot (Individual Samples) ---
+
+# Filter for Muck samples and set the Age order for faceting
+muck_data <- plot_data %>%
+  filter(SampleType == "Muck") %>%
+  mutate(Age = factor(Age, levels = age_order))
+
+# Plot for Muck
+plot_muck <- ggplot(muck_data, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  # Make bars thinner
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +
+  
+  # Group samples by Age using facets
+  # 'scales = "free_x"' removes extra space for unused sample slots
+  facet_wrap(~ Age, scales = "free_x") +
+  
+  # Set Y-axis limit from 0 to 1.0 (100%)
+  coord_cartesian(ylim = c(0, 1.0)) +
+  
+  labs(title = "Muck Samples: Taxonomic Abundance over Time",
+       y = "Relative Abundance",
+       x = "Individual Sample") +
+  scale_fill_brewer(palette = "Paired") +
+  
+  # Rotate sample IDs on x-axis to be readable
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 8))
+
+# --- 3. Create the "Sterile" Plot (Individual Samples) ---
+
+# Filter for Sterile samples and set the Age order for faceting
+sterile_data <- plot_data %>%
+  filter(SampleType == "Sterile") %>%
+  mutate(Age = factor(Age, levels = age_order))
+
+# Plot for Sterile
+plot_sterile <- ggplot(sterile_data, aes(x = Sample, y = Abundance, fill = Phylum)) +
+  # Make bars thinner
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +
+  
+  # Group samples by Age using facets
+  facet_wrap(~ Age, scales = "free_x") +
+  
+  # Set Y-axis limit from 0 to 1.0 (100%)
+  coord_cartesian(ylim = c(0, 1.0)) +
+  
+  labs(title = "Sterile Samples: Taxonomic Abundance over Time",
+       y = "Relative Abundance",
+       x = "Individual Sample") +
+  scale_fill_brewer(palette = "Paired") +
+  
+  # Rotate sample IDs on x-axis to be readable
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 8))
+
+# --- 4. Display the Plots ---
+print(plot_muck)
+print(plot_sterile)
+```
+
+```{r message=FALSE}
+# --- 8. Differential Abundance with DESeq2 ---
+library(DESeq2)
+
+# 1. Create a subset of our data containing only Muck and Sterile
+#    (We'll use the unrarefied, but clean 'physeq_clean' object)
+physeq_to_test <- subset_samples(physeq_clean, SampleType %in% c("Muck", "Sterile"))
+
+# 2. Convert the phyloseq object to a DESeq2 object
+#    We tell it we want to test the 'SampleType' variable
+deseq_obj <- phyloseq_to_deseq2(physeq_to_test, ~ SampleType)
+
+# 3. Run the DESeq analysis
+#    This estimates dispersions and fits the model
+deseq_results <- DESeq(deseq_obj, test = "Wald", fitType = "parametric")
+
+# 4. Get the final results table
+#    This will compare 'Sterile' vs 'Muck'
+res <- results(deseq_results, name = "SampleType_Sterile_vs_Muck")
+
+# 5. Let's see the summary of our results
+summary(res)
+```
+
+
+```{r}
+# --- 9. Assign Taxonomy to DESeq2 Results ---
+
+# 1. Extract the taxonomy table from our phyloseq object
+#    We need to make it a data.frame
+tax_table_df <- as.data.frame(tax_table(physeq_clean))
+
+# 2. Convert our 'res_sorted' (a DESeq object) to a data.frame
+#    We also need to make the row names (the OTU IDs) a real column
+res_df <- as.data.frame(res_sorted)
+res_df <- tibble::rownames_to_column(res_df, "OTU_ID")
+
+# 3. Merge our results with our taxonomy
+#    We'll join them by matching our "OTU_ID" column with the
+#    rownames of the taxonomy table
+res_with_tax <- merge(res_df, tax_table_df, by.x = "OTU_ID", by.y = "row.names")
+
+# 4. Let's look at the top 5 hits, now with taxonomy
+print("--- Top Hits with Taxonomy ---")
+print(head(res_with_tax, 5))
+```
+
+```{r}
+## --- 10. Plot Top Candidates (Combined with Patchwork) ---
+library(patchwork) # Make sure the package is loaded
+
+# 1. Create the first plot (plotCounts returns a ggplot object)
+#    and store it in a variable 'p1'.
+p1 <- plotCounts(deseq_results, 
+           gene = "Otu0007", 
+           intgroup = "SampleType", 
+           main = "Otu0007")
+
+# 2. Create the second plot and store it in 'p2'
+p2 <- plotCounts(deseq_results, 
+           gene = "Otu0019", 
+           intgroup = "SampleType", 
+           main = "Otu0019")
+
+# 3. Use patchwork to stack p1 on top of p2 and display them
+#    The '/' operator stacks them vertically
+print(p1 / p2)
+
+```

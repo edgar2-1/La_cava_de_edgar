@@ -1,0 +1,229 @@
+---
+title: "vv"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+
+
+
+# --- Load ALL necessary libraries ---
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(DESeq2)
+library(RColorBrewer)
+library(indicspecies)
+library(FSA) # For Dunn's Test
+library(tidyverse) # For data manipulation
+
+# --- Read OTU Table ---
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+
+
+otu_mat <- otu_raw[, -(1:3)]
+
+
+rownames(otu_mat) <- otu_raw$Group 
+
+
+otu_mat <- t(otu_mat)
+
+
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+# --- Read and Process Taxonomy ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, quote = "")
+taxonomy_clean <- lapply(strsplit(tax_raw$Taxonomy, ";"), function(x) {
+    x <- gsub("\\(.*?\\)|\\\"", "", x[nchar(x) > 0]); trimws(x)
+})
+max_ranks <- 7; taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- tax_raw$OTU
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Read and Process NEW Metadata (kohlerrr.design) ---
+metadata <- read.table("kohler.design.txt", header = TRUE, sep = "\t")
+colnames(metadata)[2:3] <- c("SampleType", "Age")
+rownames(metadata) <- metadata$SampleID
+metadata <- metadata[, -1] 
+metadata$SampleType <- factor(metadata$SampleType)
+metadata$Feed <- factor(metadata$Feed)
+sample_data_obj <- sample_data(metadata)
+```
+
+```{r phyloseq-object}
+
+# Read OTU table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+
+# Set rownames of the matrix (Taxa) before transposing
+# The original row names are NOT needed as they are just row numbers.
+
+# Extract only the count data columns (from column 4 onwards)
+otu_mat <- otu_raw[, -(1:3)]
+
+# CRITICAL: Set the row names of the matrix (these are the sample IDs)
+# This MUST be done before transposing
+rownames(otu_mat) <- otu_raw$Group 
+
+# Transpose the matrix so OTUs are rows and Samples are columns
+# Now, otu_mat has OTUs as rows (OTU IDs) and Samples as columns (Sample IDs)
+otu_mat <- t(otu_mat)
+
+# Create phyloseq OTU table
+# taxa_are_rows = TRUE is correct after the transpose
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Check the result
+head(otu_tab)
+# Read and Process Taxonomy
+
+```
+
+```{r}
+# --- 1. Read the taxonomy file ---
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+
+# --- 2. Extract taxonomy strings and OTU IDs ---
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+
+# --- 3. Split taxonomy strings by ';' and clean ---
+taxonomy_clean <- strsplit(taxonomy_strings, ";")
+
+taxonomy_clean <- lapply(taxonomy_clean, function(x) {
+  x <- x[nchar(x) > 0]                # Remove empty strings
+  x <- gsub("\\(.*?\\)", "", x)       # Remove confidence scores in parentheses
+  x <- gsub('\\"', '', x)              # Remove escaped quotes
+  trimws(x)                           # Trim whitespace
+})
+
+# --- 4. Pad each taxonomy vector to length 7 (Kingdom to Species) ---
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, function(x) {
+  length(x) <- max_ranks  # pad with NAs if needed
+  x
+}))
+
+# --- 5. Assign column and row names ---
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+# --- 6. Create tax_table object for phyloseq ---
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# --- Optional: Check the result ---
+head(tax_tab)
+```
+
+
+```{r metadata-read-final}
+
+# Load the phyloseq package
+library(phyloseq)
+
+# 1. Read the design file using the ROBUST separator sep=""
+# sep="" tells R to use one or more whitespace characters (tabs/spaces) as a delimiter.
+metadata <- read.table("Kohler.design", header = TRUE, sep = "", stringsAsFactors = FALSE)
+
+# Check the column names to verify the read
+# print(colnames(metadata)) 
+
+# 2. Rename columns for clarity and consistency (5 columns should be read now)
+# Index 2: Mother -> MotherID
+colnames(metadata)[2] <- "MotherID"
+
+# Index 5: Feed -> FeedStatus
+colnames(metadata)[5] <- "FeedStatus" 
+
+# 3. Set rownames using the SampleID
+rownames(metadata) <- metadata$SampleID
+
+# 4. Prepare for phyloseq
+metadata <- metadata[, -1] # Remove the redundant SampleID column
+
+# 5. Ensure categorical variables are factors
+metadata$Age <- factor(metadata$Age)
+metadata$SampleType <- factor(metadata$SampleType)
+metadata$FeedStatus <- factor(metadata$FeedStatus)
+metadata$MotherID <- factor(metadata$MotherID)
+
+# 6. Create the phyloseq 'sample_data' object
+sample_data_obj <- sample_data(metadata)
+
+head(sample_data_obj)
+```
+
+```{r phyloseq-object-final}
+
+# Load necessary library
+library(phyloseq)
+
+# --- Ensure components are named for pruning ---
+
+# Get sample names from the metadata object (which is assumed to be correct now)
+meta_samples <- sample_names(sample_data_obj)
+
+# --- Prune OTU and Tax tables to match metadata ---
+# This step ensures that all components have identical sample names and counts.
+otu_tab_pruned <- prune_samples(meta_samples, otu_tab)
+tax_tab_pruned <- prune_taxa(taxa_names(otu_tab_pruned), tax_tab)
+
+# --- Combine components ---
+# Note: If you have a phylogenetic tree object (e.g., 'tree_obj'), add it here.
+physeq <- phyloseq(otu_tab_pruned, tax_tab_pruned, sample_data_obj)
+
+# Check the final object
+print(physeq)
+```
+
+```{r alpha-diversity}
+
+# Calculate alpha diversity
+alpha_diversity <- estimate_richness(physeq, measures = c("Shannon", "Simpson"))
+
+# Plot alpha diversity
+plot_richness(physeq, x = "SampleType", measures = c("Shannon", "Simpson")) +
+  geom_boxplot(aes(fill = SampleType)) +
+  theme_minimal()
+```
+
+```{r beta-diversity}
+# Calculate distance matrix
+dist_matrix <- phyloseq::distance(physeq, method = "bray")
+# Perform ordination
+ord <- ordinate(physeq, method = "NMDS", distance = "bray")
+
+# Plot ordination
+plot_ordination(physeq, ord, color = "SampleType") +
+  geom_point(size = 3) +
+  theme_minimal()
+
+```
+
+```{r differential-abundance}
+# Convert to DESeq2 object
+dds <- phyloseq_to_deseq2(physeq, ~ SampleType)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Results
+res <- results(dds)
+```
+
+```{r indicator-species}
+# Run indicator species analysis
+indval_result <- multipatt(t(as(otu_table(physeq), "matrix")), metadata$SampleType, func = "indval")
+summary(indval_result)
+```
+
+```{r}
+# Example: Bar plot of most abundant taxa
+plot_bar(physeq, fill = "Phylum") +
+  facet_wrap(~ SampleType) +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")
+```
