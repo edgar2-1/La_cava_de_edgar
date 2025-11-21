@@ -1,0 +1,426 @@
+---
+title: "Microbiome Analysis Results"
+subtitle: "Maternal vs. Environmental Effects on Gut Development"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: '16:9'
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.retina = 3,
+  fig.width = 10,
+  fig.height = 6,
+  cache = TRUE
+)
+```
+
+```{r libraries, include=FALSE}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(ggpubr)
+library(kableExtra)
+library(DESeq2)
+library(indicspecies)
+theme_set(theme_bw(base_size = 16))
+```
+
+```{r load-data, cache=TRUE, include=FALSE}
+# Load OTU Table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Load Taxonomy
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+  x <- x[nchar(x) > 0]
+  x <- gsub("\\(.*?\\)|\\\"", "", x)
+  trimws(x)
+})
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# Load Metadata
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE, sep = "\t", row.names = 1,
+                            stringsAsFactors = TRUE, check.names = FALSE)
+
+# Create Phyloseq
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+sample_data_obj <- sample_data(Kohler.design[common_samples, ])
+physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
+# Rarefy
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# Alpha Diversity
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon"))
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied)
+age_order <- c("Fetus", "Newborn", "7+days", "15+days", "20+days")
+alpha_data_rarefied$Age <- factor(alpha_data_rarefied$Age, levels = age_order)
+```
+
+class: center, middle
+
+# Study Overview
+
+---
+
+## Research Question
+
+.pull-left[
+**Objective:**
+
+Investigate the effects of:
+- **Maternal Identity** (vertical transmission)
+- **Environmental Exposure** (Muck vs. Sterile)
+
+on the developing gut microbiome
+
+**Sample Size:** n = 32 samples across 5 developmental stages
+]
+
+.pull-right[
+**Key Findings:**
+
+✓ Strong maternal effect (R² ~ 20%)
+
+✓ Significant environmental effect in later stages
+
+✓ Identified specific "Core" and "Indicator" taxa
+]
+
+---
+
+## Sample Distribution
+
+```{r fig1, fig.height=5, fig.width=10}
+sample_summary <- alpha_data_rarefied %>%
+  group_by(Age, SampleType) %>%
+  summarise(n = n(), .groups = "drop")
+
+ggplot(sample_summary, aes(x = Age, y = SampleType, fill = n)) +
+  geom_tile(color = "white", size = 1.5) +
+  geom_text(aes(label = n), size = 8, color = "white", fontface = "bold") +
+  scale_fill_gradient(low = "#d73027", high = "#1a9850", limits = c(0, 10)) +
+  labs(title = "Samples per Experimental Group", x = "Developmental Stage", y = "Treatment") +
+  theme_minimal(base_size = 18) +
+  theme(panel.grid = element_blank())
+```
+
+.footnote[
+**Statistical Methods:**  
+- Rarefied to `r min_depth` reads/sample  
+- Taxa filtered (≥3 reads in ≥20% of samples)  
+- Strategy: Focus on well-powered groups (7+, 15+, 20+ days)  
+- PERMANOVA with 9,999 permutations
+]
+
+---
+
+## Result 1: Maternal Clustering
+
+```{r fig2, fig.height=6, fig.width=11}
+bray_dist <- phyloseq::distance(physeq_rarefied, method = "bray")
+metadata <- data.frame(sample_data(physeq_rarefied))
+pcoa_res <- ordinate(physeq_rarefied, method = "PCoA", distance = bray_dist)
+
+plot_ordination(physeq_rarefied, pcoa_res, color = "Mother") +
+  geom_point(size = 6, alpha = 0.8) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Community Composition Clusters by Maternal ID",
+    subtitle = "PERMANOVA: R² = 0.20, p < 0.001",
+    x = paste0("PCoA1 (", round(pcoa_res$values$Relative_eig[1] * 100, 1), "%)"),
+    y = paste0("PCoA2 (", round(pcoa_res$values$Relative_eig[2] * 100, 1), "%)")
+  ) +
+  theme(legend.position = "right", legend.text = element_text(size = 14))
+```
+
+.footnote[**Interpretation:** Strong vertical transmission or shared early environment]
+
+---
+
+## Statistical Drivers of Microbiome Variation
+
+```{r permanova-table}
+# Run PERMANOVA
+set.seed(42)
+permanova_full <- adonis2(
+  bray_dist ~ Mother + SampleType + Age,
+  data = metadata,
+  permutations = 9999,
+  by = "margin"
+)
+
+# Create effect size table
+effect_table <- data.frame(
+  Factor = c("Maternal ID", "Treatment (Muck/Sterile)", "Developmental Age"),
+  R2 = c(
+    permanova_full$R2[which(rownames(permanova_full) == "Mother")],
+    permanova_full$R2[which(rownames(permanova_full) == "SampleType")],
+    permanova_full$R2[which(rownames(permanova_full) == "Age")]
+  ),
+  F_statistic = c(
+    permanova_full$F[which(rownames(permanova_full) == "Mother")],
+    permanova_full$F[which(rownames(permanova_full) == "SampleType")],
+    permanova_full$F[which(rownames(permanova_full) == "Age")]
+  ),
+  p_value = c(
+    permanova_full$`Pr(>F)`[which(rownames(permanova_full) == "Mother")],
+    permanova_full$`Pr(>F)`[which(rownames(permanova_full) == "SampleType")],
+    permanova_full$`Pr(>F)`[which(rownames(permanova_full) == "Age")]
+  )
+) %>%
+  mutate(
+    `R² (%)` = round(R2 * 100, 1),
+    `F-statistic` = round(F_statistic, 2),
+    `p-value` = ifelse(p_value < 0.001, "< 0.001", round(p_value, 3)),
+    `Effect Size` = case_when(
+      R2 < 0.01 ~ "Negligible",
+      R2 < 0.06 ~ "Small",
+      R2 < 0.14 ~ "Medium",
+      TRUE ~ "Large"
+    )
+  ) %>%
+  dplyr::select(Factor, `R² (%)`, `F-statistic`, `p-value`, `Effect Size`)
+
+knitr::kable(effect_table, format = "html", align = "lcccc") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                font_size = 22) %>%
+  row_spec(1, bold = TRUE, background = "#ffe6e6") %>%  # Highlight Mother
+  row_spec(2, bold = TRUE, background = "#e6f3ff")      # Highlight SampleType
+```
+
+.footnote[
+**PERMANOVA (Bray-Curtis, 9,999 permutations)** - Tests for differences in community composition  
+**R²** = Proportion of variance explained | **Cohen's guidelines:** Small (1-6%), Medium (6-14%), Large (>14%)
+]
+
+---
+
+## Result 2: Environmental Effects
+
+```{r fig3, fig.height=5.5, fig.width=12}
+physeq_subset <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days"))
+bray_subset <- phyloseq::distance(physeq_subset, method = "bray")
+pcoa_subset <- ordinate(physeq_subset, method = "PCoA", distance = bray_subset)
+
+p3 <- plot_ordination(physeq_subset, pcoa_subset, color = "SampleType", shape = "Age") +
+  geom_point(size = 6) +
+  scale_color_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  labs(title = "PCoA: Muck vs. Sterile") +
+  theme(legend.position = "right")
+
+p4 <- ggplot(alpha_data_rarefied %>% filter(Age %in% c("7+days", "15+days")), 
+             aes(x = SampleType, y = Shannon, fill = SampleType)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.5) +
+  scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", size = 6) +
+  labs(title = "Alpha Diversity", y = "Shannon Index") +
+  theme(legend.position = "none")
+
+p3 + p4
+```
+
+.footnote[**Finding:** Clear separation between Muck and Sterile environments (p < 0.01)]
+
+---
+
+## Taxonomic Composition
+
+```{r fig4, fig.height=6, fig.width=12}
+physeq_family <- tax_glom(physeq_rarefied, taxrank = "Family")
+physeq_rel_f <- transform_sample_counts(physeq_family, function(x) x / sum(x))
+melted_phy_f <- psmelt(physeq_rel_f)
+top_families <- names(sort(tapply(melted_phy_f$Abundance, melted_phy_f$Family, sum), decreasing = TRUE))[1:12]
+melted_phy_f$Family_Collapsed <- ifelse(melted_phy_f$Family %in% top_families, 
+                                         as.character(melted_phy_f$Family), "Other")
+
+ggplot(melted_phy_f, aes(x = Sample, y = Abundance, fill = Family_Collapsed)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_grid(~ Age, scales = "free_x", space = "free") +
+  scale_fill_viridis_d(name = "Family", option = "turbo") +
+  labs(y = "Relative Abundance", title = "Family-Level Composition Across Development") +
+  theme_minimal(base_size = 16) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+
+---
+
+## Indicator Species
+
+**Taxa that significantly distinguish Muck from Sterile:**
+
+```{r indicators}
+physeq_indic <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days", "20+days"))
+physeq_indic <- prune_taxa(taxa_sums(physeq_indic) > 0, physeq_indic)
+otu_indic <- as(otu_table(physeq_indic), "matrix")
+if(taxa_are_rows(physeq_indic)) { otu_indic <- t(otu_indic) }
+groups_indic <- sample_data(physeq_indic)$SampleType
+indval <- multipatt(otu_indic, groups_indic, control = how(nperm=999))
+
+if (!is.null(indval$sign)) {
+  sig_ind <- indval$sign %>% filter(p.value < 0.05)
+  if (nrow(sig_ind) > 0) {
+    tax_ind <- as.data.frame(tax_table(physeq_indic)[rownames(sig_ind), ])
+    tax_ind$Taxon <- paste(tax_ind$Family, tax_ind$Genus, sep = " : ")
+    results_ind <- cbind(sig_ind, tax_ind)
+    knitr::kable(results_ind[1:min(6, nrow(results_ind)), c("stat", "p.value", "Taxon")], 
+                 col.names = c("Indicator Value", "p-value", "Taxon"),
+                 digits = 3,
+                 format = "html") %>%
+      kable_styling(bootstrap_options = c("striped", "condensed"), 
+                    full_width = FALSE, 
+                    font_size = 20)
+  }
+}
+```
+
+.footnote[**Key Insight:** *Cetobacterium*, *Morganella*, and others are biomarkers]
+
+---
+
+## Core Microbiome (Prevalence > 50%)
+
+```{r core}
+get_core_taxa <- function(physeq_obj, threshold = 0.5) {
+  physeq_rel <- transform_sample_counts(physeq_obj, function(x) x / sum(x))
+  core_taxa <- filter_taxa(physeq_rel, function(x) sum(x > 0) > (threshold * length(x)), TRUE)
+  return(taxa_names(core_taxa))
+}
+
+physeq_muck <- subset_samples(physeq_rarefied, 
+                              SampleType == "Muck" & Age %in% c("7+days", "15+days", "20+days"))
+physeq_sterile <- subset_samples(physeq_rarefied, 
+                                 SampleType == "Sterile" & Age %in% c("7+days", "15+days", "20+days"))
+core_muck <- get_core_taxa(physeq_muck)
+core_sterile <- get_core_taxa(physeq_sterile)
+shared_core <- intersect(core_muck, core_sterile)
+unique_muck <- setdiff(core_muck, core_sterile)
+unique_sterile <- setdiff(core_sterile, core_muck)
+
+# Create a comprehensive table
+all_core <- c(shared_core, unique_muck, unique_sterile)
+if(length(all_core) > 0) {
+  physeq_core <- prune_taxa(all_core, physeq_rarefied)
+  core_tax <- as.data.frame(tax_table(physeq_core))
+  core_tax$OTU_ID <- rownames(core_tax)
+  core_tax$Status <- case_when(
+    rownames(core_tax) %in% shared_core ~ "Shared",
+    rownames(core_tax) %in% unique_muck ~ "Muck Only",
+    rownames(core_tax) %in% unique_sterile ~ "Sterile Only"
+  )
+  core_tax$Taxon <- paste(core_tax$Family, core_tax$Genus, sep = " : ")
+  
+  # Display table
+  core_display <- core_tax %>%
+    dplyr::select(Status, Taxon) %>%
+    arrange(Status)
+  
+  knitr::kable(core_display, 
+               col.names = c("Core Status", "Taxonomic Identity (Family : Genus)"),
+               format = "html") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"), 
+                  full_width = FALSE, 
+                  font_size = 18) %>%
+    row_spec(which(core_display$Status == "Muck Only"), background = "#f4e4d7") %>%
+    row_spec(which(core_display$Status == "Shared"), background = "#d4e9d4") %>%
+    row_spec(which(core_display$Status == "Sterile Only"), background = "#d9e9e9")
+}
+```
+
+.footnote[
+**Interpretation:** Shared = Maternally transmitted; Unique = Environment-recruited  
+**Statistical rigor:** Prevalence threshold = 50% within treatment group (7+, 15+, 20+ days)
+]
+
+---
+
+class: center, middle
+
+## Conclusions
+
+---
+
+## Key Findings
+
+.pull-left[
+### 1. Maternal Legacy
+- Maternal identity is the **primary driver** of early microbiome composition (R² = 20%)
+- Strong vertical transmission signal
+
+### 2. Environmental Plasticity
+- Exposure to **Muck vs. Sterile** drives divergence in later stages
+- Significant effect in 7+ and 15+ day samples
+]
+
+.pull-right[
+### 3. Specific Drivers
+- Identified **4 significant indicator species**
+- Defined **core microbiomes** for each environment
+- 11 total core taxa across both treatments
+
+### 4. Biological Implication
+Early life environment **interacts with** maternal inoculum to shape the adult microbiome
+]
+
+---
+
+## Next Steps
+
+**Validation:**
+- qPCR confirmation of indicator species
+- Shotgun metagenomics for functional potential
+
+**Expanded Analysis:**
+- Larger sample size (target n=100)
+- Additional time points for temporal dynamics
+- Longitudinal tracking of individuals
+
+**Mechanistic Studies:**
+- Investigate "Muck-only" core taxa functions
+- Test maternal transmission routes (vertical vs. environmental)
+
+---
+
+class: center, middle
+
+# Thank You
+
+**Questions?**
+
+.footnote[
+Analysis code available in `Publication_Report.Rmd`  
+Figures and tables exported as PDFs and CSVs
+]

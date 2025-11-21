@@ -1,0 +1,356 @@
+---
+title: "Feed Status Effect on Microbiome at 15 Days"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 8)
+```
+
+# Analysis Overview
+
+**Research Question:** Does feeding status (Fed vs. Unfed) affect the gut microbiome composition in 15-day-old snakes?
+
+**Hypothesis:** Fed snakes will have different microbiome composition due to nutrient influx and altered gut environment.
+
+# Setup
+
+```{r libraries}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(ggpubr)
+library(kableExtra)
+library(DESeq2)
+
+theme_set(theme_bw(base_size = 14))
+```
+
+# Data Loading
+
+```{r load-data}
+# Load OTU Table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Load Taxonomy
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+  x <- x[nchar(x) > 0]
+  x <- gsub("\\(.*?\\)|\\\"", "", x)
+  trimws(x)
+})
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# Load Metadata
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE, sep = "\t", row.names = 1,
+                            stringsAsFactors = TRUE, check.names = FALSE)
+
+# Create Phyloseq
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+sample_data_obj <- sample_data(Kohler.design[common_samples, ])
+physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
+# Rarefy
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# Alpha Diversity
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon", "Chao1"))
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied)
+```
+
+# Subset to 15-Day Samples
+
+```{r subset-15days}
+physeq_15days <- subset_samples(physeq_rarefied, Age == "15+days")
+alpha_15days <- alpha_data_rarefied %>% filter(Age == "15+days")
+
+cat("Total 15-day samples:", nsamples(physeq_15days), "\n")
+cat("Sample breakdown:\n")
+table(sample_data(physeq_15days)$Feed, sample_data(physeq_15days)$SampleType)
+```
+
+# Sample Distribution
+
+```{r sample-table}
+sample_summary <- alpha_15days %>%
+  group_by(SampleType, Feed) %>%
+  summarise(n = n(), .groups = "drop")
+
+knitr::kable(sample_summary, 
+             caption = "Sample Distribution at 15 Days",
+             col.names = c("Treatment", "Feed Status", "Sample Size")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+# Alpha Diversity Analysis
+
+## Shannon Diversity
+
+```{r alpha-shannon, fig.height=6, fig.width=10}
+p_shannon <- ggplot(alpha_15days, aes(x = Feed, y = Shannon, fill = Feed)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  facet_wrap(~ SampleType) +
+  scale_fill_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", size = 5) +
+  labs(title = "Shannon Diversity: Fed vs. Unfed Snakes at 15 Days",
+       y = "Shannon Diversity Index",
+       x = "Feeding Status") +
+  theme(legend.position = "top", text = element_text(size = 14))
+
+print(p_shannon)
+ggsave("FeedStatus_Shannon.pdf", p_shannon, width = 10, height = 6)
+```
+
+## Observed OTUs
+
+```{r alpha-observed, fig.height=6, fig.width=10}
+p_observed <- ggplot(alpha_15days, aes(x = Feed, y = Observed, fill = Feed)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  facet_wrap(~ SampleType) +
+  scale_fill_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", size = 5) +
+  labs(title = "Species Richness: Fed vs. Unfed Snakes at 15 Days",
+       y = "Observed OTUs (Species Richness)",
+       x = "Feeding Status") +
+  theme(legend.position = "top", text = element_text(size = 14))
+
+print(p_observed)
+ggsave("FeedStatus_Richness.pdf", p_observed, width = 10, height = 6)
+```
+
+## Summary Statistics
+
+```{r alpha-summary}
+alpha_stats <- alpha_15days %>%
+  group_by(SampleType, Feed) %>%
+  summarise(
+    n = n(),
+    Shannon_mean = mean(Shannon, na.rm = TRUE),
+    Shannon_sd = sd(Shannon, na.rm = TRUE),
+    Observed_mean = mean(Observed, na.rm = TRUE),
+    Observed_sd = sd(Observed, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Shannon = paste0(round(Shannon_mean, 2), " ± ", round(Shannon_sd, 2)),
+    Richness = paste0(round(Observed_mean, 1), " ± ", round(Observed_sd, 1))
+  ) %>%
+  dplyr::select(SampleType, Feed, n, Shannon, Richness)
+
+knitr::kable(alpha_stats,
+             col.names = c("Treatment", "Fed?", "n", "Shannon (Mean ± SD)", "Richness (Mean ± SD)"),
+             caption = "Alpha Diversity Summary Statistics") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
+write.csv(alpha_stats, "FeedStatus_AlphaStats.csv", row.names = FALSE)
+```
+
+# Beta Diversity Analysis
+
+## PERMANOVA: Feed Status Effect
+
+```{r permanova-feed}
+# Calculate Bray-Curtis distance
+bray_15days <- phyloseq::distance(physeq_15days, method = "bray")
+metadata_15days <- data.frame(sample_data(physeq_15days))
+
+# PERMANOVA testing Feed + SampleType + Mother
+set.seed(42)
+permanova_feed <- adonis2(
+  bray_15days ~ Feed + SampleType + Mother,
+  data = metadata_15days,
+  permutations = 9999,
+  by = "margin"
+)
+
+print(permanova_feed)
+
+# Create effect size table
+effect_table_feed <- data.frame(
+  Factor = c("Feed Status", "Treatment (Muck/Sterile)", "Maternal ID"),
+  R2 = c(
+    permanova_feed$R2[which(rownames(permanova_feed) == "Feed")],
+    permanova_feed$R2[which(rownames(permanova_feed) == "SampleType")],
+    permanova_feed$R2[which(rownames(permanova_feed) == "Mother")]
+  ),
+  F_stat = c(
+    permanova_feed$F[which(rownames(permanova_feed) == "Feed")],
+    permanova_feed$F[which(rownames(permanova_feed) == "SampleType")],
+    permanova_feed$F[which(rownames(permanova_feed) == "Mother")]
+  ),
+  p_value = c(
+    permanova_feed$`Pr(>F)`[which(rownames(permanova_feed) == "Feed")],
+    permanova_feed$`Pr(>F)`[which(rownames(permanova_feed) == "SampleType")],
+    permanova_feed$`Pr(>F)`[which(rownames(permanova_feed) == "Mother")]
+  )
+) %>%
+  mutate(
+    `R² (%)` = round(R2 * 100, 1),
+    `F-statistic` = round(F_stat, 2),
+    `p-value` = format.pval(p_value, digits = 3),
+    Significance = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01 ~ "**",
+      p_value < 0.05 ~ "*",
+      TRUE ~ "ns"
+    )
+  ) %>%
+  dplyr::select(Factor, `R² (%)`, `F-statistic`, `p-value`, Significance)
+
+knitr::kable(effect_table_feed,
+             caption = "PERMANOVA: Drivers of Microbiome Variation at 15 Days",
+             align = "lcccc") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(1, bold = TRUE, background = "#fff3cd")  # Highlight Feed Status
+
+write.csv(effect_table_feed, "FeedStatus_PERMANOVA.csv", row.names = FALSE)
+```
+
+## PCoA Ordination
+
+```{r pcoa-feed, fig.height=7, fig.width=12}
+pcoa_15days <- ordinate(physeq_15days, method = "PCoA", distance = bray_15days)
+
+p_pcoa <- plot_ordination(physeq_15days, pcoa_15days, 
+                          color = "Feed", shape = "SampleType") +
+  geom_point(size = 6, alpha = 0.8) +
+  scale_color_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60"),
+                     name = "Fed?") +
+  scale_shape_manual(values = c(16, 17), name = "Treatment") +
+  labs(
+    title = "PCoA: Microbiome Composition by Feed Status (15 Days)",
+    subtitle = paste0("PERMANOVA - Feed: R² = ", 
+                     round(effect_table_feed$`R² (%)`, 1)[1], 
+                     "%, p = ", effect_table_feed$`p-value`[1]),
+    x = paste0("PCoA1 (", round(pcoa_15days$values$Relative_eig[1] * 100, 1), "%)"),
+    y = paste0("PCoA2 (", round(pcoa_15days$values$Relative_eig[2] * 100, 1), "%)")
+  ) +
+  theme(legend.position = "right", text = element_text(size = 14))
+
+print(p_pcoa)
+ggsave("FeedStatus_PCoA.pdf", p_pcoa, width = 12, height = 7)
+```
+
+# Differential Abundance Analysis
+
+## DESeq2: Taxa Responsive to Feeding
+
+```{r deseq2-feed}
+# Subset original (non-rarefied) data for DESeq2
+physeq_15days_raw <- subset_samples(physeq, Age == "15+days")
+physeq_15days_raw <- prune_taxa(taxa_sums(physeq_15days_raw) > 0, physeq_15days_raw)
+
+# Convert to DESeq2
+ds_obj_feed <- phyloseq_to_deseq2(physeq_15days_raw, ~ SampleType + Feed)
+ds_res_feed <- DESeq(ds_obj_feed, test = "Wald", fitType = "parametric")
+
+# Get results for Fed vs. Unfed
+res_feed <- results(ds_res_feed, contrast = c("Feed", "Yes", "No"))
+
+# Filter significant taxa
+sig_taxa_feed <- as.data.frame(res_feed) %>%
+  filter(padj < 0.1) %>%  # Use relaxed threshold for pilot study
+  arrange(desc(abs(log2FoldChange)))
+
+if (nrow(sig_taxa_feed) > 0) {
+  tax_info_feed <- as.data.frame(tax_table(physeq)[rownames(sig_taxa_feed), ])
+  sig_taxa_feed_annotated <- cbind(sig_taxa_feed, tax_info_feed)
+  sig_taxa_feed_annotated$Taxon <- paste(sig_taxa_feed_annotated$Family, 
+                                         sig_taxa_feed_annotated$Genus, sep = " : ")
+  
+  cat("\n## Taxa Responsive to Feeding (FDR < 0.1):\n\n")
+  knitr::kable(sig_taxa_feed_annotated[, c("log2FoldChange", "padj", "Taxon")],
+               caption = "Differentially Abundant Taxa: Fed vs. Unfed",
+               col.names = c("log2 FC (Fed/Unfed)", "Adjusted p-value", "Taxon"),
+               digits = 3) %>%
+    kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+  
+  write.csv(sig_taxa_feed_annotated, "FeedStatus_DifferentialAbundance.csv")
+} else {
+  cat("\nNo taxa significantly different at FDR < 0.1\n")
+  cat("This may be due to small sample size. Consider relaxing threshold or qualitative interpretation.\n")
+}
+```
+
+# Taxonomic Composition
+
+## Family-Level Composition
+
+```{r taxonomy-family, fig.height=7, fig.width=12}
+physeq_family_15 <- tax_glom(physeq_15days, taxrank = "Family")
+physeq_rel_f_15 <- transform_sample_counts(physeq_family_15, function(x) x / sum(x))
+melted_phy_f_15 <- psmelt(physeq_rel_f_15)
+
+top_families_15 <- names(sort(tapply(melted_phy_f_15$Abundance, melted_phy_f_15$Family, sum), 
+                              decreasing = TRUE))[1:12]
+melted_phy_f_15$Family_Collapsed <- ifelse(melted_phy_f_15$Family %in% top_families_15, 
+                                            as.character(melted_phy_f_15$Family), "Other")
+
+p_taxonomy <- ggplot(melted_phy_f_15, aes(x = Sample, y = Abundance, fill = Family_Collapsed)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_grid(Feed ~ SampleType, scales = "free_x", space = "free") +
+  scale_fill_viridis_d(name = "Family", option = "turbo") +
+  labs(title = "Family-Level Composition: Feed Status Comparison (15 Days)",
+       y = "Relative Abundance") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
+
+print(p_taxonomy)
+ggsave("FeedStatus_Taxonomy.pdf", p_taxonomy, width = 12, height = 7)
+```
+
+# Summary
+
+## Key Findings
+
+Based on the analysis of 15-day-old snakes:
+
+1. **Alpha Diversity:** 
+   - Shannon diversity: [See plot above for statistical significance]
+   - Species richness: [See plot above for statistical significance]
+
+2. **Beta Diversity (PERMANOVA):**
+   - Feed Status R²: **`r round(effect_table_feed$'R² (%)'[1], 1)`%** (p = `r effect_table_feed$'p-value'[1]`)
+   - Feed effect relative to Treatment and Maternal ID shown in table above
+
+3. **Differential Abundance:**
+   - Number of responsive taxa (FDR < 0.1): **`r if(exists('sig_taxa_feed')) nrow(sig_taxa_feed) else 0`**
+
+4. **Interpretation:**
+   - Feeding status [does/does not] significantly alter microbiome composition at 15 days
+   - Effect size is [small/medium/large] compared to other factors
+   - Consider in context of sample size limitations
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```

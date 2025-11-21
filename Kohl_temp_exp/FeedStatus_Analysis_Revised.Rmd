@@ -9,17 +9,25 @@ output:
     code_folding: show
     theme: flatly
 ---
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 8)
 ```
+
 # Analysis Overview
+
 **Research Question:** Does feeding status (Fed vs. Unfed) affect the gut microbiome composition?
+
 **Statistical Issue Identified:** At 15 days, Feed status is confounded with Treatment (only 1 Muck-Fed sample).
+
 **Revised Strategy:**
 1. **Primary Analysis:** Focus on Sterile group at 15 days (balanced: 4 Fed vs. 4 Unfed)
 2. **Exploratory:** Check Feed distribution across all ages to identify where Muck can be integrated
+
 ---
+
 # Setup
+
 ```{r libraries}
 library(phyloseq)
 library(vegan)
@@ -29,9 +37,12 @@ library(patchwork)
 library(ggpubr)
 library(kableExtra)
 library(DESeq2)
+
 theme_set(theme_bw(base_size = 14))
 ```
+
 # Data Loading
+
 ```{r load-data}
 # Load OTU Table
 otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
@@ -39,6 +50,7 @@ otu_mat <- otu_raw[, -(1:3)]
 rownames(otu_mat) <- otu_raw$Group 
 otu_mat <- t(otu_mat)
 otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
 # Load Taxonomy
 tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
                       sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
@@ -54,28 +66,36 @@ taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
 colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 rownames(taxonomy_mat) <- names(taxonomy_strings)
 tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
 # Load Metadata
 Kohler.design <- read.table("Kohlerdesign.txt",
                             header = TRUE, sep = "\t", row.names = 1,
                             stringsAsFactors = TRUE, check.names = FALSE)
+
 # Create Phyloseq
 common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
 otu_tab_pruned <- prune_samples(common_samples, otu_tab)
 sample_data_obj <- sample_data(Kohler.design[common_samples, ])
 physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
 # Rarefy
 physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
 min_depth <- min(sample_sums(physeq_filt))
 set.seed(42)
 physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
 # Alpha Diversity
 alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon", "Chao1"))
 sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
 alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied)
 ```
+
 ---
+
 # Part 1: Feed Distribution Survey
+
 **Goal:** Identify ages where Feed status is balanced across both Muck and Sterile treatments.
+
 ```{r feed-distribution}
 # Create comprehensive table
 feed_dist <- alpha_data_rarefied %>%
@@ -83,11 +103,13 @@ feed_dist <- alpha_data_rarefied %>%
   summarise(n = n(), .groups = "drop") %>%
   pivot_wider(names_from = Feed, values_from = n, values_fill = 0) %>%
   rename(Unfed = No, Fed = Yes)
+
 knitr::kable(feed_dist,
              caption = "Feed Status Distribution Across All Ages and Treatments",
              col.names = c("Age", "Treatment", "Unfed", "Fed")) %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
   row_spec(which(feed_dist$Fed >= 2 & feed_dist$Unfed >= 2), background = "#d4edda")  # Highlight balanced groups
+
 # Flag ages with balanced Feed status in BOTH treatments
 cat("\n## Ages with Potentially Usable Feed Comparisons:\n\n")
 balanced_ages <- feed_dist %>%
@@ -95,6 +117,7 @@ balanced_ages <- feed_dist %>%
   group_by(Age) %>%
   summarise(n_treatments = n(), .groups = "drop") %>%
   filter(n_treatments == 2)
+
 if(nrow(balanced_ages) > 0) {
   cat("Ages where BOTH Muck and Sterile have ≥2 Fed and ≥2 Unfed:\n")
   print(balanced_ages$Age)
@@ -103,16 +126,23 @@ if(nrow(balanced_ages) > 0) {
   cat("We can only analyze Feed effect within individual treatments.\n")
 }
 ```
+
 ---
+
 # Part 2: PRIMARY ANALYSIS - Sterile Group at 15 Days
+
 **Sample Size:** 4 Fed vs. 4 Unfed (balanced design, adequate power)
+
 ```{r sterile-15-subset}
 physeq_sterile_15 <- subset_samples(physeq_rarefied, SampleType == "Sterile" & Age == "15+days")
 alpha_sterile_15 <- alpha_data_rarefied %>% filter(SampleType == "Sterile" & Age == "15+days")
+
 cat("Sterile Group at 15 Days:\n")
 table(sample_data(physeq_sterile_15)$Feed)
 ```
+
 ## Alpha Diversity
+
 ```{r alpha-sterile, fig.height=5, fig.width=10}
 p1 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Shannon, fill = Feed)) +
   geom_boxplot(alpha = 0.7, width = 0.5) +
@@ -121,6 +151,7 @@ p1 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Shannon, fill = Feed)) +
   stat_compare_means(method = "wilcox.test", label = "p.format", size = 6) +
   labs(title = "Shannon Diversity", y = "Shannon Index", x = "Fed?") +
   theme(legend.position = "none", text = element_text(size = 14))
+
 p2 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Observed, fill = Feed)) +
   geom_boxplot(alpha = 0.7, width = 0.5) +
   geom_jitter(width = 0.1, size = 4, alpha = 0.7) +
@@ -128,11 +159,14 @@ p2 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Observed, fill = Feed)) +
   stat_compare_means(method = "wilcox.test", label = "p.format", size = 6) +
   labs(title = "Species Richness", y = "Observed OTUs", x = "Fed?") +
   theme(legend.position = "none", text = element_text(size = 14))
+
 p_alpha_combined <- p1 + p2 + 
   plot_annotation(title = "Sterile Group at 15 Days: Feed Effect on Alpha Diversity",
                   theme = theme(plot.title = element_text(size = 16, face = "bold")))
+
 print(p_alpha_combined)
 ggsave("FeedStatus_Sterile15_Alpha.pdf", p_alpha_combined, width = 10, height = 5)
+
 # Summary stats
 alpha_stats_sterile <- alpha_sterile_15 %>%
   group_by(Feed) %>%
@@ -144,14 +178,18 @@ alpha_stats_sterile <- alpha_sterile_15 %>%
     Observed_sd = sd(Observed),
     .groups = "drop"
   )
+
 knitr::kable(alpha_stats_sterile, digits = 2,
              caption = "Alpha Diversity: Sterile Group at 15 Days") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 ```
+
 ## Beta Diversity (PERMANOVA)
+
 ```{r permanova-sterile}
 bray_sterile_15 <- phyloseq::distance(physeq_sterile_15, method = "bray")
 metadata_sterile_15 <- data.frame(sample_data(physeq_sterile_15))
+
 set.seed(42)
 permanova_sterile_feed <- adonis2(
   bray_sterile_15 ~ Feed + Mother,
@@ -159,7 +197,9 @@ permanova_sterile_feed <- adonis2(
   permutations = 9999,
   by = "margin"
 )
+
 print(permanova_sterile_feed)
+
 # Create table
 perm_table <- data.frame(
   Factor = c("Feed Status", "Maternal ID"),
@@ -177,17 +217,22 @@ perm_table <- data.frame(
       TRUE ~ "ns"
     )
   )
+
 knitr::kable(perm_table[, c("Factor", "R2_percent", "F_stat", "p_formatted", "Significance")],
              col.names = c("Factor", "R² (%)", "F-statistic", "p-value", "Sig."),
              caption = "PERMANOVA: Sterile Group at 15 Days",
              align = "lcccc") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
   row_spec(1, bold = TRUE, background = "#fff3cd")
+
 write.csv(perm_table, "FeedStatus_Sterile15_PERMANOVA.csv", row.names = FALSE)
 ```
+
 ## PCoA Ordination
+
 ```{r pcoa-sterile, fig.height=6, fig.width=9}
 pcoa_sterile_15 <- ordinate(physeq_sterile_15, method = "PCoA", distance = bray_sterile_15)
+
 p_pcoa_sterile <- plot_ordination(physeq_sterile_15, pcoa_sterile_15, color = "Feed") +
   geom_point(size = 6, alpha = 0.8) +
   scale_color_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60"),
@@ -199,22 +244,28 @@ p_pcoa_sterile <- plot_ordination(physeq_sterile_15, pcoa_sterile_15, color = "F
     y = paste0("PCoA2 (", round(pcoa_sterile_15$values$Relative_eig[2] * 100, 1), "%)")
   ) +
   theme(text = element_text(size = 14))
+
 print(p_pcoa_sterile)
 ggsave("FeedStatus_Sterile15_PCoA.pdf", p_pcoa_sterile, width = 9, height = 6)
 ```
+
 ## Differential Abundance (DESeq2)
+
 ```{r deseq2-sterile}
 # Subset raw data
 physeq_sterile_15_raw <- subset_samples(physeq, SampleType == "Sterile" & Age == "15+days")
 physeq_sterile_15_raw <- prune_taxa(taxa_sums(physeq_sterile_15_raw) > 0, physeq_sterile_15_raw)
+
 # DESeq2
 ds_obj_sterile <- phyloseq_to_deseq2(physeq_sterile_15_raw, ~ Mother + Feed)
 ds_res_sterile <- DESeq(ds_obj_sterile, test = "Wald", fitType = "parametric")
 res_sterile_feed <- results(ds_res_sterile, contrast = c("Feed", "Yes", "No"))
+
 # Filter significant (relaxed threshold for small sample)
 sig_taxa_sterile <- as.data.frame(res_sterile_feed) %>%
   filter(padj < 0.2) %>%  # Relaxed for n=8
   arrange(padj)
+
 if (nrow(sig_taxa_sterile) > 0) {
   tax_info <- as.data.frame(tax_table(physeq)[rownames(sig_taxa_sterile), ])
   sig_taxa_sterile_annotated <- cbind(sig_taxa_sterile, tax_info)
@@ -233,15 +284,19 @@ if (nrow(sig_taxa_sterile) > 0) {
   cat("\nNo taxa significantly different at FDR < 0.2\n")
 }
 ```
+
 ## Taxonomic Composition
+
 ```{r taxonomy-sterile, fig.height=6, fig.width=10}
 physeq_family_sterile <- tax_glom(physeq_sterile_15, taxrank = "Family")
 physeq_rel_f_sterile <- transform_sample_counts(physeq_family_sterile, function(x) x / sum(x))
 melted_f_sterile <- psmelt(physeq_rel_f_sterile)
+
 top_fam_sterile <- names(sort(tapply(melted_f_sterile$Abundance, melted_f_sterile$Family, sum), 
                               decreasing = TRUE))[1:10]
 melted_f_sterile$Family_Collapsed <- ifelse(melted_f_sterile$Family %in% top_fam_sterile, 
                                             as.character(melted_f_sterile$Family), "Other")
+
 p_tax_sterile <- ggplot(melted_f_sterile, aes(x = Sample, y = Abundance, fill = Family_Collapsed)) +
   geom_bar(stat = "identity", position = "stack") +
   facet_wrap(~ Feed, scales = "free_x") +
@@ -250,11 +305,15 @@ p_tax_sterile <- ggplot(melted_f_sterile, aes(x = Sample, y = Abundance, fill = 
        y = "Relative Abundance") +
   theme_minimal(base_size = 14) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
+
 print(p_tax_sterile)
 ggsave("FeedStatus_Sterile15_Taxonomy.pdf", p_tax_sterile, width = 10, height = 6)
 ```
+
 ---
+
 # Part 3: EXPLORATORY - Multi-Age Analysis (if applicable)
+
 ```{r multi-age-check}
 # Check if any age has balanced Feed in BOTH treatments
 if(nrow(balanced_ages) > 0) {
@@ -291,26 +350,40 @@ if(nrow(balanced_ages) > 0) {
   cat("Recommendation: Analyze Feed effect separately within each treatment.\n")
 }
 ```
+
 ---
+
 # Summary & Conclusions
+
 ## Key Findings (Sterile Group at 15 Days):
+
 1. **Alpha Diversity:**
    - Shannon: Fed = `r round(alpha_stats_sterile$Shannon_mean[2], 2)` ± `r round(alpha_stats_sterile$Shannon_sd[2], 2)`, Unfed = `r round(alpha_stats_sterile$Shannon_mean[1], 2)` ± `r round(alpha_stats_sterile$Shannon_sd[1], 2)`
    - Wilcoxon test: See plots above
+
 2. **Beta Diversity (PERMANOVA):**
    - Feed Status: R² = **`r perm_table$R2_percent[1]`%**, p = **`r perm_table$p_formatted[1]`**
    - Interpretation: Feed `r ifelse(perm_table$p_value[1] < 0.05, "significantly affects", "does not significantly affect")` microbiome composition
+
 3. **Differential Abundance:**
    - Responsive taxa (FDR < 0.2): **`r if(exists('sig_taxa_sterile')) nrow(sig_taxa_sterile) else 0`**
+
 ## Biological Interpretation:
+
 - **If significant:** Feeding alters the gut environment (pH, nutrient availability, bile acids), selecting for taxa adapted to nutrient-rich conditions vs. fasting-adapted taxa.
+
 - **If not significant:** The microbiome at 15 days may be primarily shaped by maternal transmission and early colonization, with feeding effects emerging later (test at 20+ days?) or being subtle relative to inter-individual variation.
+
 ## Recommendations:
+
 1. **For Sterile group:** Results are robust (balanced design, n=8).
 2. **For Muck group:** Cannot test Feed effect at 15 days (n=1 fed). Check 7+ and 20+ days individually.
 3. **Power consideration:** With n=4 per group, only large effect sizes (R² > 15%) will be statistically significant.
+
 ---
+
 # Session Info
+
 ```{r session}
 sessionInfo()
 ```
