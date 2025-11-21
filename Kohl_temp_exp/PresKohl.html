@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Microbiome Analysis Results</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Edgardo L. Rosado Ramos" />
+    <meta name="date" content="2025-11-21" />
+    <script src="libs/header-attrs/header-attrs.js"></script>
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+    <script src="libs/kePrint/kePrint.js"></script>
+    <link href="libs/lightable/lightable.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+.title[
+# Microbiome Analysis Results
+]
+.subtitle[
+## Maternal vs. Environmental Effects on Gut Development
+]
+.author[
+### Edgardo L. Rosado Ramos
+]
+.date[
+### 2025-11-21
+]
+
+---
+
+
+
+
+class: center, middle
+# Study Overview
+---
+## Research Question
+.pull-left[
+**Objective:**
+Investigate the effects of:
+- **Maternal Identity** (vertical transmission)
+- **Environmental Exposure** (Muck vs. Sterile)
+on the developing gut microbiome
+**Sample Size:** n = 32 samples across 5 developmental stages
+]
+.pull-right[
+**Key Findings:**
+✓ Strong maternal effect (R² ~ 20%)
+✓ Significant environmental effect in later stages
+✓ Identified specific "Core" and "Indicator" taxa
+]
+---
+## Sample Distribution
+&lt;img src="PresKohl_files/figure-html/fig1-1.png" width="720" /&gt;
+.footnote[
+**Statistical Methods:**  
+- Rarefied to 37 reads/sample  
+- Taxa filtered (≥3 reads in ≥20% of samples)  
+- Strategy: Focus on well-powered groups (7+, 15+, 20+ days)  
+- PERMANOVA with 9,999 permutations
+]
+---
+## Result 1: Maternal Clustering
+&lt;img src="PresKohl_files/figure-html/fig2-1.png" width="792" /&gt;
+.footnote[**Interpretation:** Strong vertical transmission or shared early environment]
+---
+## Statistical Drivers of Microbiome Variation
+&lt;table class="table table-striped table-hover" style="font-size: 22px; color: black; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; Factor &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; R² (%) &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; F-statistic &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; p-value &lt;/th&gt;
+   &lt;th style="text-align:center;"&gt; Effect Size &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;font-weight: bold;background-color: rgba(255, 230, 230, 255) !important;"&gt; Maternal ID &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(255, 230, 230, 255) !important;"&gt; 21.6 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(255, 230, 230, 255) !important;"&gt; 3.64 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(255, 230, 230, 255) !important;"&gt; &amp;lt; 0.001 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(255, 230, 230, 255) !important;"&gt; Large &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;font-weight: bold;background-color: rgba(230, 243, 255, 255) !important;"&gt; Treatment (Muck/Sterile) &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(230, 243, 255, 255) !important;"&gt; 11.5 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(230, 243, 255, 255) !important;"&gt; 5.83 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(230, 243, 255, 255) !important;"&gt; 0.001 &lt;/td&gt;
+   &lt;td style="text-align:center;font-weight: bold;background-color: rgba(230, 243, 255, 255) !important;"&gt; Medium &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Developmental Age &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 6.8 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 1.71 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 0.095 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; Medium &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+.footnote[
+**PERMANOVA (Bray-Curtis, 9,999 permutations)** - Tests for differences in community composition  
+**R²** = Proportion of variance explained | **Cohen's guidelines:** Small (1-6%), Medium (6-14%), Large (&gt;14%)
+]
+---
+## Result 2: Environmental Effects
+&lt;img src="PresKohl_files/figure-html/fig3-1.png" width="864" /&gt;
+.footnote[**Finding:** Clear separation between Muck and Sterile environments (p &lt; 0.01)]
+---
+## Taxonomic Composition
+&lt;img src="PresKohl_files/figure-html/fig4-1.png" width="864" /&gt;
+---
+## Indicator Species
+**Taxa that significantly distinguish Muck from Sterile:**
+&lt;table class="table table-striped table-condensed" style="font-size: 20px; color: black; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt;   &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; Indicator Value &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; p-value &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; Taxon &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Otu0001 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.758 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.015 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Fusobacteriaceae : Cetobacterium &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Otu0006 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.798 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.013 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Enterobacteriaceae : Morganella &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Otu0007 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.759 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.011 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidales_unclassified : Bacteroidales_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Otu0014 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.628 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.042 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Porphyromonadaceae : Porphyromonadaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+.footnote[**Key Insight:** *Cetobacterium*, *Morganella*, and others are biomarkers]
+---
+## Core Microbiome (Prevalence &gt; 50%)
+&lt;table class="table table-striped table-condensed" style="font-size: 18px; color: black; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt;   &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; Core Status &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; Taxonomic Identity (Family : Genus) &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Otu0001 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Muck Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Fusobacteriaceae : Cetobacterium &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Otu0007 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Muck Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Bacteroidales_unclassified : Bacteroidales_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Otu0014 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Muck Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(244, 228, 215, 255) !important;"&gt; Porphyromonadaceae : Porphyromonadaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Otu0003 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Shared &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Peptostreptococcaceae : Peptostreptococcaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Otu0005 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Shared &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Enterobacteriaceae : Enterobacteriaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Otu0010 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Shared &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(212, 233, 212, 255) !important;"&gt; Clostridiaceae_1 : Clostridium_sensu_stricto &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Otu0002 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Bacteroidaceae : Bacteroides &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Otu0004 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Clostridiaceae_1 : Clostridium_sensu_stricto &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Otu0006 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Enterobacteriaceae : Morganella &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Otu0009 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Firmicutes_unclassified : Firmicutes_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Otu0013 &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(217, 233, 233, 255) !important;"&gt; Lachnospiraceae : Clostridium_XlVa &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+.footnote[
+**Interpretation:** Shared = Maternally transmitted; Unique = Environment-recruited  
+**Statistical rigor:** Prevalence threshold = 50% within treatment group (7+, 15+, 20+ days)
+]
+---
+class: center, middle
+## Conclusions
+---
+## Key Findings
+.pull-left[
+### 1. Maternal Legacy
+- Maternal identity is the **primary driver** of early microbiome composition (R² = 20%)
+- Strong vertical transmission signal
+### 2. Environmental Plasticity
+- Exposure to **Muck vs. Sterile** drives divergence in later stages
+- Significant effect in 7+ and 15+ day samples
+]
+.pull-right[
+### 3. Specific Drivers
+- Identified **4 significant indicator species**
+- Defined **core microbiomes** for each environment
+- 11 total core taxa across both treatments
+### 4. Biological Implication
+Early life environment **interacts with** maternal inoculum to shape the adult microbiome
+]
+---
+## Next Steps
+**Validation:**
+- qPCR confirmation of indicator species
+- Shotgun metagenomics for functional potential
+**Expanded Analysis:**
+- Larger sample size (target n=100)
+- Additional time points for temporal dynamics
+- Longitudinal tracking of individuals
+**Mechanistic Studies:**
+- Investigate "Muck-only" core taxa functions
+- Test maternal transmission routes (vertical vs. environmental)
+---
+class: center, middle
+# Thank You
+**Questions?**
+.footnote[
+Analysis code available in `Publication_Report.Rmd`  
+Figures and tables exported as PDFs and CSVs
+]
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+  "highlightStyle": "github",
+  "highlightLines": true,
+  "countIncrementalSlides": false,
+  "ratio": "16:9"
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+// add `data-at-shortcutkeys` attribute to <body> to resolve conflicts with JAWS
+// screen reader (see PR #262)
+(function(d) {
+  let res = {};
+  d.querySelectorAll('.remark-help-content table tr').forEach(tr => {
+    const t = tr.querySelector('td:nth-child(2)').innerText;
+    tr.querySelectorAll('td:first-child .key').forEach(key => {
+      const k = key.innerText;
+      if (/^[a-z]$/.test(k)) res[k] = t;  // must be a single letter (key)
+    });
+  });
+  d.body.setAttribute('data-at-shortcutkeys', JSON.stringify(res));
+})(document);
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
