@@ -1,0 +1,85 @@
+---
+title: "Examen Final"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(palmerpenguins)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+penguins <- penguins
+
+head(penguins)
+```
+
+```{r, scatter}
+ggplot(data = penguins, aes(x = flipper_length_mm, y = body_mass_g)) +
+    geom_point()
+```
+
+```{r}
+ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
+    geom_point()
+```
+
+```{r}
+ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
+    geom_point() +
+  facet_wrap(~species)
+```
+
+```{r}
+ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
+    geom_point() +
+  facet_wrap(~species) +
+  geom_smooth(method = "lm")
+```
+```{r,warning=FALSE, scatter}
+ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
+    geom_point() +
+  geom_smooth(method= "lm") +
+    geom_point() +
+    scale_x_continuous(
+        name = "Flipper length (mm)"
+    ) +
+    scale_y_continuous(
+        name = "Body Mass (g)"
+    )
+
+```
+
+```{r}
+ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
+    geom_point(size= 0.5) +
+ geom_smooth(method = "lm", color= "blue") +
+    geom_point() +
+    scale_x_continuous(
+        name = "Flipper length (mm)"
+    ) +
+    scale_y_continuous(
+        name = "Body Mass (g)"
+    ) + ggtitle("Correlating flipper length to body mass", subtitle = "In three species of penguins")
+```
+
+
+```{r}
+mod <- lm(body_mass_g ~ flipper_length_mm, data =
+            penguins)
+summary(mod)
+
+```
+
+1. The R squared is 0.7583
+
+2. The slop coefficient p-value is 2.2e-16
+
+3. Yes there is a significant relation between flipper length and body mass
+
+4. -5780.831
+
+5. 49.686
