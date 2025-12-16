@@ -17,7 +17,7 @@ editor_options:
 
 [GitHub](https://github.com/edgar2-1)
 
-![Foto con Jason](/Users/Familia/Desktop/IMG_0452.jpg)
+
 
 #Assignments <br>
 [Assignment 1](Assignment/Assignment1.html)
