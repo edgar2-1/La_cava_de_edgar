@@ -39,7 +39,7 @@ ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass
   facet_wrap(~species) +
   geom_smooth(method = "lm")
 ```
-```{r,warning=FALSE, scatter}
+```{r,warning=FALSE}
 ggplot(data = penguins, aes(color= species, x = flipper_length_mm, y = body_mass_g)) +
     geom_point() +
   geom_smooth(method= "lm") +
