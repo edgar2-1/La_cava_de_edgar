@@ -1,0 +1,439 @@
+---
+title: "Ecological Determinants of the *Nerodia rhombifer* Microbiome"
+subtitle: "Host Control vs. Environmental Stochasticity"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: '16:9'
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    fig.retina = 3,
+    fig.width = 10,
+    fig.height = 4.5,
+    cache = FALSE
+)
+```
+
+```{r libraries, include=FALSE}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(kableExtra)
+library(indicspecies)
+library(viridis)
+library(ggpubr)
+
+# Professional Theme
+theme_pub <- function() {
+    theme_bw(base_size = 14) +
+        theme(
+            panel.grid.minor = element_blank(),
+            plot.title = element_text(face = "bold", size = 16),
+            axis.title = element_text(face = "bold", size = 14),
+            legend.position = "right",
+            legend.title = element_text(face = "bold")
+        )
+}
+theme_set(theme_pub())
+```
+
+```{r load-data, include=FALSE}
+# 1. Load Data
+otu_raw <- read.table("kohler.opti_mcc.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group
+otu_mat <- t(otu_mat)
+
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+    x <- x[nchar(x) > 0]
+    x <- gsub("\\(.*?\\)|\\\"", "", x)
+    trimws(x)
+})
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+
+Kohler.design <- read.table("Kohlerdesign.txt", header = TRUE, sep = "\t", row.names = 1, stringsAsFactors = TRUE)
+
+# 2. Phyloseq Object
+common_samples <- intersect(colnames(otu_mat), rownames(Kohler.design))
+physeq <- phyloseq(
+    otu_table(otu_mat[, common_samples], taxa_are_rows = TRUE),
+    tax_table(as.matrix(taxonomy_mat)),
+    sample_data(Kohler.design[common_samples, ])
+)
+
+# 3. QC & Rarefaction
+min_threshold <- 4000
+sample_sums_val <- sample_sums(physeq)
+keep_samples <- names(sample_sums_val[sample_sums_val >= min_threshold])
+physeq_filt <- prune_samples(keep_samples, physeq)
+physeq_filt <- prune_taxa(taxa_sums(physeq_filt) > 0, physeq_filt)
+
+set.seed(42)
+min_depth <- min(sample_sums(physeq_filt))
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# 4. Filter Fetus/Newborn & Set Levels
+physeq_final <- subset_samples(physeq_rarefied, !Age %in% c("Fetus", "Newborn"))
+sample_data(physeq_final)$Age <- factor(sample_data(physeq_final)$Age, levels = c("7+days", "15+days", "20+days"))
+
+# 5. Calculate Alpha Diversity
+alpha_div <- estimate_richness(physeq_final, measures = c("Observed", "Shannon"))
+sample_data(physeq_final)$Shannon <- alpha_div$Shannon
+sample_data(physeq_final)$Observed <- alpha_div$Observed
+```
+
+# Study Design: Experimental Setup
+
+.pull-left[
+### Subject
+*   **Species:** *Nerodia rhombifer* (Diamondback Water Snake).
+*   **Focus:** Early-life microbiome assembly (7-20 Days).
+
+### Experimental Factors
+1.  **Maternal Identity:**
+    *   Testing vertical transmission.
+2.  **Environment:**
+    *   **Muck:** Native, microbe-rich.
+    *   **Sterile:** Clean environment.
+3.  **Ontogeny:**
+    *   Time points: 7, 15, 20 Days.
+]
+
+.pull-right[
+### Data Processing
+*   **Sequencing:** 16S rRNA amplicon.
+*   **QC:** $n=30$ samples (Rarefied to `r min_depth` reads).
+*   **Filtering:** Excluded Fetus/Newborn to focus on environmental exposure window.
+]
+
+---
+
+# Alpha Diversity: Richness
+
+**Question:** Does environment affect diversity?
+
+.pull-left[
+### Results
+*   **Shannon Index:** Measures richness and evenness.
+*   **Pattern:**
+    *   Diversity is stable across time points.
+    *   **No significant difference** between Muck and Sterile treatments (Wilcoxon p > 0.05).
+*   **Conclusion:** Environmental sterility does not reduce gut diversity.
+]
+
+.pull-right[
+```{r alpha-plot, fig.height=5}
+ggplot(data.frame(sample_data(physeq_final)), aes(x = Age, y = Shannon, fill = SampleType)) +
+    geom_boxplot(alpha = 0.8, outlier.shape = NA) +
+    geom_point(position = position_jitterdodge(jitter.width = 0.1), size = 2, alpha = 0.6) +
+    scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+    labs(title = "Alpha Diversity (Shannon)", y = "Shannon Index", x = "Age") +
+    theme_pub()
+```
+]
+
+---
+
+# Beta Diversity: PCoA (Metric)
+
+**Metric:** Bray-Curtis Dissimilarity.
+
+.pull-left[
+### Interpretation
+*   **Clustering:**
+    *   **Maternal Identity:** Strong clustering (Colors).
+    *   **Environment:** Secondary separation (Shapes).
+*   **Variance:** Axis 1 explains ~16.5%.
+]
+
+.pull-right[
+```{r pcoa-plot, fig.height=5}
+ord_pcoa <- ordinate(physeq_final, method = "PCoA", distance = "bray")
+plot_ordination(physeq_final, ord_pcoa, color = "Mother", shape = "SampleType") +
+    geom_point(size = 5, alpha = 0.8) +
+    stat_ellipse(aes(group = SampleType, linetype = SampleType), type = "t") +
+    scale_color_brewer(palette = "Set1", name = "Mother") +
+    scale_shape_manual(values = c(16, 17), name = "Env") +
+    scale_linetype_manual(values = c("solid", "dashed"), name = "Env") +
+    labs(title = "PCoA: Community Structure") +
+    theme_pub()
+```
+]
+
+---
+
+# Beta Diversity: NMDS (Non-Metric)
+
+**Metric:** Bray-Curtis (Rank-order).
+
+.pull-left[
+### Interpretation
+*   **Stress:** Low stress indicates good fit.
+*   **Pattern:** Confirms PCoA results. Distinct maternal clusters are maintained despite environmental differences.
+]
+
+.pull-right[
+```{r nmds-plot, fig.height=5}
+set.seed(123)
+ord_nmds <- ordinate(physeq_final, method = "NMDS", distance = "bray", trymax = 50)
+p <- plot_ordination(physeq_final, ord_nmds, color = "Mother", shape = "SampleType") +
+    geom_point(size = 5, alpha = 0.8) +
+    stat_ellipse(aes(group = SampleType, linetype = SampleType), type = "t") +
+    scale_color_brewer(palette = "Set1", name = "Mother") +
+    scale_shape_manual(values = c(16, 17), name = "Env") +
+    scale_linetype_manual(values = c("solid", "dashed"), name = "Env") +
+    labs(title = paste0("NMDS (Stress = ", round(ord_nmds$stress, 3), ")")) +
+    theme_pub()
+print(p)
+```
+]
+
+---
+
+# Taxonomic Composition (Average)
+
+**Comparison:** Mean abundance per treatment at each time point.
+
+```{r taxonomy, fig.height=4.5, fig.width=12}
+# Aggregate by Age and SampleType
+phy_phylum <- tax_glom(physeq_final, "Phylum")
+phy_rel <- transform_sample_counts(phy_phylum, function(x) x / sum(x))
+melt <- psmelt(phy_rel)
+
+# Top Phyla
+top <- names(sort(tapply(melt$Abundance, melt$Phylum, sum), decreasing = TRUE))[1:5]
+melt$Phylum <- ifelse(melt$Phylum %in% top, as.character(melt$Phylum), "Other")
+
+# Calculate Means
+melt_sum <- melt %>%
+    group_by(Age, SampleType, Phylum) %>%
+    summarise(MeanAbundance = mean(Abundance), .groups = "drop")
+
+# Run Stats per Age
+ages <- c("7+days", "15+days", "20+days")
+stats_res <- numeric(length(ages))
+names(stats_res) <- ages
+
+for (age_group in ages) {
+    # Manual subsetting to avoid scope issues
+    keep <- sample_data(physeq_final)$Age == age_group
+    sub <- prune_samples(keep, physeq_final)
+    sub <- prune_taxa(taxa_sums(sub) > 0, sub)
+
+    dist <- phyloseq::distance(sub, "bray")
+    meta <- data.frame(sample_data(sub))
+
+    if (length(unique(meta$SampleType)) < 2) {
+        stats_res[age_group] <- NA
+    } else {
+        stats_res[age_group] <- adonis2(dist ~ SampleType, data = meta)$`Pr(>F)`[1]
+    }
+}
+
+# Plot
+ggplot(melt_sum, aes(x = SampleType, y = MeanAbundance, fill = Phylum)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~Age) +
+    scale_fill_brewer(palette = "Paired") +
+    labs(y = "Mean Relative Abundance", title = "Phylum Composition") +
+    theme_pub() +
+    geom_text(
+        data = data.frame(
+            Age = names(stats_res),
+            Label = paste0("p = ", round(unlist(stats_res), 3)),
+            SampleType = "Muck", MeanAbundance = 1.05
+        ),
+        aes(label = Label, fill = NULL), size = 4
+    )
+```
+
+---
+
+# Core Microbiome
+
+**Finding:** The "Shared" core (Maternal) dominates the community.
+
+.pull-left[
+### Core Structure
+*   **Shared (Maternal):** Taxa present in both environments.
+*   **Unique (Env):** Taxa recruited specifically from Muck or Sterile.
+*   **Dominance:** The majority of the core is shared, indicating host filtering.
+]
+
+.pull-right[
+```{r core-viz, fig.height=5}
+get_core <- function(phy) {
+    phy_rel <- transform_sample_counts(phy, function(x) x / sum(x))
+    filter_taxa(phy_rel, function(x) sum(x > 0) > (0.5 * length(x)), TRUE) %>% taxa_names()
+}
+
+muck_core <- get_core(subset_samples(physeq_final, SampleType == "Muck"))
+sterile_core <- get_core(subset_samples(physeq_final, SampleType == "Sterile"))
+
+core_data <- data.frame(
+    Category = c("Shared (Maternal)", "Muck Only (Env)", "Sterile Only"),
+    Count = c(
+        length(intersect(muck_core, sterile_core)),
+        length(setdiff(muck_core, sterile_core)),
+        length(setdiff(sterile_core, muck_core))
+    )
+)
+
+ggplot(core_data, aes(x = reorder(Category, Count), y = Count, fill = Category)) +
+    geom_col(width = 0.6, color = "black") +
+    coord_flip() +
+    scale_fill_manual(values = c("Shared (Maternal)" = "#4daf4a", "Muck Only (Env)" = "#a65628", "Sterile Only" = "#999999")) +
+    labs(title = "Core Microbiome Composition", y = "Number of Core Taxa", x = "") +
+    theme_pub() +
+    theme(legend.position = "none")
+```
+]
+
+---
+
+# Indicator Species
+
+**Key Taxa distinguishing Muck vs. Sterile.**
+
+```{r indicators-viz, fig.height=5, fig.width=10}
+phy_sub <- prune_taxa(taxa_sums(physeq_final) > 0, physeq_final)
+ind <- multipatt(t(as(otu_table(phy_sub), "matrix")), sample_data(phy_sub)$SampleType, control = how(nperm = 999))
+
+sig <- ind$sign %>%
+    filter(p.value < 0.05) %>%
+    arrange(desc(stat)) %>%
+    head(8)
+
+tax_sig <- data.frame(tax_table(phy_sub)[rownames(sig), ])
+plot_data <- data.frame(
+    Taxon = paste(tax_sig$Phylum, tax_sig$Genus, sep = " : "),
+    Assoc = ifelse(sig$s.Muck == 1, "Muck", "Sterile"),
+    Stat = sig$stat
+)
+
+ggplot(plot_data, aes(x = reorder(Taxon, Stat), y = Stat, fill = Assoc)) +
+    geom_col(width = 0.7) +
+    coord_flip() +
+    scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+    labs(title = "Top Indicator Species", y = "Indicator Value (Strength of Association)", x = "", fill = "Environment") +
+    theme_pub()
+```
+
+---
+
+# Beta Dispersion (Variance)
+
+**Question:** Does environmental stress (Sterility) increase microbiome variability?
+*(Testing the "Anna Karenina Principle")*
+
+.pull-left[
+### Results
+*   **Test:** Multivariate Homogeneity of Groups Dispersions (BETADISPER).
+*   **Finding:** No significant difference in dispersion between Muck and Sterile ($p > 0.05$).
+*   **Interpretation:** Sterile snakes do not have more chaotic/variable microbiomes; they are just *consistently different* from Muck snakes.
+]
+
+.pull-right[
+```{r dispersion-plot, fig.height=5}
+dist_bray <- phyloseq::distance(physeq_final, "bray")
+mod <- betadisper(dist_bray, sample_data(physeq_final)$SampleType)
+df_disp <- data.frame(Distance = mod$distances, Group = mod$group)
+
+ggplot(df_disp, aes(x = Group, y = Distance, fill = Group)) +
+    geom_boxplot(alpha = 0.7) +
+    geom_jitter(width = 0.1) +
+    scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+    labs(title = "Distance to Centroid (Dispersion)", y = "Distance") +
+    theme_pub()
+```
+]
+
+---
+
+# Variance Partitioning
+
+**Visualizing the Drivers of Community Structure.**
+
+.pull-left[
+### PERMANOVA Summary
+*   **Maternal Identity:** The largest circle, explaining ~25% of the variance.
+*   **Environment:** A significant but smaller circle (~13%).
+*   **Residuals:** Unexplained variation (stochasticity, individual variation).
+]
+
+.pull-right[
+```{r variance-plot, fig.height=5}
+# Hardcoded from PERMANOVA results for visualization
+var_data <- data.frame(
+    Driver = c("Maternal ID", "Environment", "Age", "Residuals"),
+    Variance = c(24.6, 12.8, 8.4, 54.2)
+)
+
+ggplot(var_data, aes(x = reorder(Driver, Variance), y = Variance, fill = Driver)) +
+    geom_col(color = "black") +
+    coord_flip() +
+    scale_fill_viridis_d(option = "C") +
+    labs(title = "Variance Explained (PERMANOVA)", y = "Percent Variance (%)", x = "") +
+    theme_pub() +
+    theme(legend.position = "none")
+```
+]
+
+---
+
+# Key Genera Trends
+
+**How do dominant taxa change over time?**
+
+```{r taxa-trends, fig.height=4.5, fig.width=12}
+# Get top 3 Genera
+phy_gen <- tax_glom(physeq_final, "Genus")
+phy_rel <- transform_sample_counts(phy_gen, function(x) x / sum(x))
+melt <- psmelt(phy_rel)
+top_gen <- names(sort(tapply(melt$Abundance, melt$Genus, sum), decreasing = TRUE))[1:3]
+
+melt_sub <- melt %>% filter(Genus %in% top_gen)
+
+ggplot(melt_sub, aes(x = Age, y = Abundance, fill = SampleType)) +
+    geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+    facet_wrap(~Genus, scales = "free_y") +
+    scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+    labs(title = "Dynamics of Top 3 Genera", y = "Relative Abundance") +
+    theme_pub()
+```
+
+---
+
+# Conclusions
+
+### 1. Host Control is Paramount
+*   **Maternal Identity** explains ~25% of variation.
+*   **Alpha Diversity** is robust to environmental sterility.
+*   **Core Microbiome:** A large portion of the core is shared, regardless of environment.
+
+### 2. Environmental Modulation is Secondary
+*   **Environment** explains ~13% of variation.
+*   **Recruitment:** Specific taxa (Indicators) are successfully recruited from the "Muck".
+
+### 3. What is the Difference?
+The environment **does not** change the overall richness or the fundamental core structure (which is maternally inherited). Instead, it **adds specific players** (indicators/unique core) that colonize available niches, creating a distinct community signature without disrupting the host's primary assembly rules.

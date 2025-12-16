@@ -1,0 +1,165 @@
+---
+title: "Feed Analysis Simple"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Analysis Overview
+
+**Research Question:** Does feeding status (Fed vs. Unfed) affect the gut microbiome composition?
+
+**Statistical Note:** We are analyzing the **Sterile group at 15 days** because it has a balanced sample size (4 Fed vs. 4 Unfed). The Muck group cannot be analyzed at this age due to insufficient samples.
+
+**Important:** We have removed "Mother" from the statistical model because it is perfectly confounded with Feed status in this specific subset.
+
+```{r libraries}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(ggpubr)
+library(kableExtra)
+library(DESeq2)
+
+theme_set(theme_bw(base_size = 14))
+```
+
+```{r load-data}
+# Load OTU Table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Load Taxonomy
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+  x <- x[nchar(x) > 0]
+  x <- gsub("\\(.*?\\)|\\\"", "", x)
+  trimws(x)
+})
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# Load Metadata
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE, sep = "\t", row.names = 1,
+                            stringsAsFactors = TRUE, check.names = FALSE)
+
+# Create Phyloseq
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+sample_data_obj <- sample_data(Kohler.design[common_samples, ])
+physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
+# Rarefy
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+
+# Alpha Diversity
+alpha_diversity_rarefied <- estimate_richness(physeq_rarefied, measures = c("Observed", "Shannon", "Chao1"))
+sample_metadata_rarefied <- as.data.frame(sample_data(physeq_rarefied))
+alpha_data_rarefied <- cbind(alpha_diversity_rarefied, sample_metadata_rarefied)
+```
+
+# Results: Sterile Group (15 Days)
+
+```{r sterile-15-subset}
+physeq_sterile_15 <- subset_samples(physeq_rarefied, SampleType == "Sterile" & Age == "15+days")
+alpha_sterile_15 <- alpha_data_rarefied %>% filter(SampleType == "Sterile" & Age == "15+days")
+```
+
+## Alpha Diversity
+
+```{r alpha-sterile, fig.height=5, fig.width=10}
+p1 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Shannon, fill = Feed)) +
+  geom_boxplot(alpha = 0.7, width = 0.5) +
+  geom_jitter(width = 0.1, size = 4, alpha = 0.7) +
+  scale_fill_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", size = 6) +
+  labs(title = "Shannon Diversity", y = "Shannon Index", x = "Fed?") +
+  theme(legend.position = "none", text = element_text(size = 14))
+
+p2 <- ggplot(alpha_sterile_15, aes(x = Feed, y = Observed, fill = Feed)) +
+  geom_boxplot(alpha = 0.7, width = 0.5) +
+  geom_jitter(width = 0.1, size = 4, alpha = 0.7) +
+  scale_fill_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60")) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", size = 6) +
+  labs(title = "Species Richness", y = "Observed OTUs", x = "Fed?") +
+  theme(legend.position = "none", text = element_text(size = 14))
+
+p_alpha_combined <- p1 + p2
+print(p_alpha_combined)
+```
+
+## Beta Diversity (PERMANOVA)
+
+```{r permanova-sterile}
+bray_sterile_15 <- phyloseq::distance(physeq_sterile_15, method = "bray")
+metadata_sterile_15 <- data.frame(sample_data(physeq_sterile_15))
+
+set.seed(42)
+# WARNING: Mother is removed from model due to perfect confounding with Feed
+permanova_sterile_feed <- adonis2(
+  bray_sterile_15 ~ Feed,
+  data = metadata_sterile_15,
+  permutations = 9999,
+  by = "margin"
+)
+
+print(permanova_sterile_feed)
+```
+
+## PCoA Ordination
+
+```{r pcoa-sterile, fig.height=6, fig.width=9}
+pcoa_sterile_15 <- ordinate(physeq_sterile_15, method = "PCoA", distance = bray_sterile_15)
+
+p_pcoa_sterile <- plot_ordination(physeq_sterile_15, pcoa_sterile_15, color = "Feed") +
+  geom_point(size = 6, alpha = 0.8) +
+  scale_color_manual(values = c("No" = "#e74c3c", "Yes" = "#27ae60"),
+                     name = "Fed?") +
+  labs(title = "PCoA: Sterile Group at 15 Days") +
+  theme(text = element_text(size = 14))
+
+print(p_pcoa_sterile)
+```
+
+## Differential Abundance (DESeq2)
+
+```{r deseq2-sterile}
+# Subset raw data
+physeq_sterile_15_raw <- subset_samples(physeq, SampleType == "Sterile" & Age == "15+days")
+physeq_sterile_15_raw <- prune_taxa(taxa_sums(physeq_sterile_15_raw) > 0, physeq_sterile_15_raw)
+
+# DESeq2 (simplified model)
+ds_obj_sterile <- phyloseq_to_deseq2(physeq_sterile_15_raw, ~ Feed)
+ds_res_sterile <- DESeq(ds_obj_sterile, test = "Wald", fitType = "parametric")
+res_sterile_feed <- results(ds_res_sterile, contrast = c("Feed", "Yes", "No"))
+
+# Filter significant
+sig_taxa_sterile <- as.data.frame(res_sterile_feed) %>%
+  filter(padj < 0.2) %>%
+  arrange(padj)
+
+if (nrow(sig_taxa_sterile) > 0) {
+  tax_info <- as.data.frame(tax_table(physeq)[rownames(sig_taxa_sterile), ])
+  sig_taxa_sterile_annotated <- cbind(sig_taxa_sterile, tax_info)
+  print(sig_taxa_sterile_annotated[, c("log2FoldChange", "padj", "Family", "Genus")])
+} else {
+  cat("\nNo taxa significantly different at FDR < 0.2\n")
+}
+```

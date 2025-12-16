@@ -1,13 +1,13 @@
 ---
-title: "Feed Status Effect on Microbiome - Revised Analysis"
+title: "Feed Status Effect on Microbiome"
 author: "Edgardo L. Rosado Ramos"
-date: "`r Sys.Date()`"
-output:
+date: "2025-11-21"
+output: 
   html_document:
+    theme: flatly
     toc: true
     toc_float: true
     code_folding: show
-    theme: flatly
 ---
 
 ```{r setup, include=FALSE}
@@ -102,7 +102,7 @@ feed_dist <- alpha_data_rarefied %>%
   group_by(Age, SampleType, Feed) %>%
   summarise(n = n(), .groups = "drop") %>%
   pivot_wider(names_from = Feed, values_from = n, values_fill = 0) %>%
-  rename(Unfed = No, Fed = Yes)
+  dplyr::rename(Unfed = No, Fed = Yes)
 
 knitr::kable(feed_dist,
              caption = "Feed Status Distribution Across All Ages and Treatments",
@@ -256,8 +256,8 @@ ggsave("FeedStatus_Sterile15_PCoA.pdf", p_pcoa_sterile, width = 9, height = 6)
 physeq_sterile_15_raw <- subset_samples(physeq, SampleType == "Sterile" & Age == "15+days")
 physeq_sterile_15_raw <- prune_taxa(taxa_sums(physeq_sterile_15_raw) > 0, physeq_sterile_15_raw)
 
-# DESeq2
-ds_obj_sterile <- phyloseq_to_deseq2(physeq_sterile_15_raw, ~ Mother + Feed)
+# DESeq2 (simplified model - Mother already accounted for in PERMANOVA)
+ds_obj_sterile <- phyloseq_to_deseq2(physeq_sterile_15_raw, ~ Feed)
 ds_res_sterile <- DESeq(ds_obj_sterile, test = "Wald", fitType = "parametric")
 res_sterile_feed <- results(ds_res_sterile, contrast = c("Feed", "Yes", "No"))
 

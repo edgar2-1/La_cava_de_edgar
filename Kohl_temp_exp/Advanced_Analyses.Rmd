@@ -1,0 +1,315 @@
+---
+title: "Advanced Microbiome Analyses"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 7)
+```
+
+# Analysis Overview
+
+This report implements three advanced ecological analyses to deepen the understanding of the snake gut microbiome:
+
+1.  **The "Anna Karenina" Principle (Beta-Dispersion):** Testing if environmental stress (Sterile treatment) leads to increased microbiome variability (stochasticity).
+2.  **Developmental Trajectory:** Quantifying the "distance traveled" from the Newborn state over time.
+3.  **Functional Inference:** Mapping dominant taxa to known metabolic functions to predict the functional consequences of microbiome shifts.
+
+---
+
+# Setup & Data Loading
+
+```{r libraries}
+library(phyloseq)
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(kableExtra)
+library(RColorBrewer)
+
+theme_set(theme_bw(base_size = 14))
+```
+
+```{r load-data}
+# Load OTU Table
+otu_raw <- read.table("kohler.opti_mcc.0.03.subsample.shared", header = TRUE, sep = "\t")
+otu_mat <- otu_raw[, -(1:3)]
+rownames(otu_mat) <- otu_raw$Group 
+otu_mat <- t(otu_mat)
+otu_tab <- otu_table(otu_mat, taxa_are_rows = TRUE)
+
+# Load Taxonomy
+tax_raw <- read.table("kohler.opti_mcc.0.03.cons.taxonomy", 
+                      sep = "\t", header = TRUE, stringsAsFactors = FALSE, quote = "")
+taxonomy_strings <- tax_raw$Taxonomy
+names(taxonomy_strings) <- tax_raw$OTU
+taxonomy_clean <- lapply(strsplit(taxonomy_strings, ";"), function(x) {
+  x <- x[nchar(x) > 0]
+  x <- gsub("\\(.*?\\)|\\\"", "", x)
+  trimws(x)
+})
+max_ranks <- 7
+taxonomy_mat <- do.call(rbind, lapply(taxonomy_clean, `length<-`, max_ranks))
+colnames(taxonomy_mat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+rownames(taxonomy_mat) <- names(taxonomy_strings)
+tax_tab <- tax_table(as.matrix(taxonomy_mat))
+
+# Load Metadata
+Kohler.design <- read.table("Kohlerdesign.txt",
+                            header = TRUE, sep = "\t", row.names = 1,
+                            stringsAsFactors = TRUE, check.names = FALSE)
+
+# Create Phyloseq
+common_samples <- intersect(sample_names(otu_tab), rownames(Kohler.design))
+otu_tab_pruned <- prune_samples(common_samples, otu_tab)
+sample_data_obj <- sample_data(Kohler.design[common_samples, ])
+physeq <- phyloseq(otu_tab_pruned, tax_tab, sample_data_obj)
+
+# Rarefy
+physeq_filt <- filter_taxa(physeq, function(x) sum(x > 3) > (0.2 * length(x)), TRUE)
+min_depth <- min(sample_sums(physeq_filt))
+set.seed(42)
+physeq_rarefied <- rarefy_even_depth(physeq_filt, sample.size = min_depth, replace = FALSE)
+```
+
+---
+
+# Analysis 1: The "Anna Karenina" Principle (Beta-Dispersion)
+
+**Hypothesis:** The "Sterile" environment lacks the consistent microbial inputs of the "Muck" environment. Therefore, Sterile microbiomes will be more variable (stochastic) between individuals than Muck microbiomes.
+
+*"All healthy microbiomes are alike; each stressed microbiome is stressed in its own way."*
+
+```{r beta-dispersion}
+# Subset to relevant ages (7+ days onwards where treatment exists)
+physeq_dev <- subset_samples(physeq_rarefied, Age %in% c("7+days", "15+days", "20+days"))
+
+# Calculate Distance Matrix
+bray_dist <- phyloseq::distance(physeq_dev, method = "bray")
+metadata_dev <- data.frame(sample_data(physeq_dev))
+
+# Calculate Multivariate Dispersion (Distance to Centroid)
+beta_disp <- betadisper(bray_dist, metadata_dev$SampleType)
+
+# Statistical Test (Permutation Test)
+set.seed(42)
+disp_test <- permutest(beta_disp, pairwise = TRUE, permutations = 999)
+
+print(disp_test)
+
+# Extract distances for plotting
+disp_df <- data.frame(
+  Distance = beta_disp$distances,
+  Group = metadata_dev$SampleType,
+  Age = metadata_dev$Age
+)
+
+# Plot
+p_disp <- ggplot(disp_df, aes(x = Group, y = Distance, fill = Group)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  scale_fill_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  labs(
+    title = "Microbiome Stochasticity (Beta-Dispersion)",
+    subtitle = paste0("Significance: p = ", round(disp_test$tab$`Pr(>F)`[1], 3)),
+    y = "Distance to Group Centroid (Variability)",
+    x = "Treatment"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "none")
+
+print(p_disp)
+```
+
+**Interpretation:**
+- **Higher distance** = More variable/chaotic communities.
+- **Lower distance** = More consistent/deterministic communities.
+- If Sterile is higher, it suggests the lack of environmental microbes leads to stochastic assembly (random drift).
+
+---
+
+# Analysis 2: Developmental Trajectory
+
+**Hypothesis:** We expect the microbiome to mature over time. Do "Muck" snakes develop *faster* or *differently* than "Sterile" snakes relative to the starting point (Newborns)?
+
+```{r trajectory}
+# 1. Calculate the "Newborn Centroid" (The Baseline)
+physeq_newborn <- subset_samples(physeq_rarefied, Age == "Newborn")
+# We need the OTU table for newborns
+otu_newborn <- as.data.frame(t(otu_table(physeq_newborn)))
+# Calculate average abundance of every OTU in newborns
+newborn_centroid <- colMeans(otu_newborn)
+
+# 2. Calculate distance of EVERY sample to this Newborn Centroid
+# We'll combine the centroid with the rest of the data to calc distances
+otu_all <- as.data.frame(t(otu_table(physeq_rarefied)))
+# Add centroid as a new row
+otu_with_centroid <- rbind(otu_all, Newborn_Avg = newborn_centroid)
+
+# Calculate Bray-Curtis distance matrix
+dist_mat_traj <- vegan::vegdist(otu_with_centroid, method = "bray")
+dist_mat_matrix <- as.matrix(dist_mat_traj)
+
+# Extract distance of each sample to the "Newborn_Avg"
+dist_to_newborn <- dist_mat_matrix[rownames(dist_mat_matrix) != "Newborn_Avg", "Newborn_Avg"]
+
+# Create plotting data
+traj_df <- data.frame(
+  SampleID = names(dist_to_newborn),
+  Dist_to_Newborn = dist_to_newborn,
+  Age = sample_data(physeq_rarefied)$Age,
+  Treatment = sample_data(physeq_rarefied)$SampleType
+)
+
+# Filter out Fetus/Newborn for the plot (we want to see trajectory AFTER birth)
+traj_plot_df <- traj_df %>%
+  filter(!Age %in% c("Fetus", "Newborn")) %>%
+  mutate(Age_Numeric = case_when(
+    Age == "7+days" ~ 7,
+    Age == "15+days" ~ 15,
+    Age == "20+days" ~ 20
+  ))
+
+# Plot
+p_traj <- ggplot(traj_plot_df, aes(x = Age_Numeric, y = Dist_to_Newborn, color = Treatment, group = Treatment)) +
+  geom_point(size = 4, alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2) +
+  scale_color_manual(values = c("Muck" = "#8c510a", "Sterile" = "#01665e")) +
+  labs(
+    title = "Developmental Trajectory",
+    subtitle = "Divergence from Newborn State over Time",
+    y = "Bray-Curtis Distance to Newborn Average",
+    x = "Days Post-Birth"
+  ) +
+  scale_x_continuous(breaks = c(7, 15, 20)) +
+  theme_minimal(base_size = 16)
+
+print(p_traj)
+```
+
+**Interpretation:**
+- **Slope:** A steeper slope means the microbiome is changing *faster* away from the newborn state.
+- **Y-Intercept:** A higher value means the community shifted immediately after birth.
+- This tells us if the "Muck" environment accelerates microbiome maturation.
+
+---
+
+# Analysis 3: Functional Inference (Taxonomy-to-Function)
+
+**Goal:** Infer the metabolic potential of the microbiome by mapping dominant taxa to their known biological functions.
+
+```{r functional-inference}
+# 1. Identify Top Genera
+physeq_gen <- tax_glom(physeq_rarefied, taxrank = "Genus")
+physeq_rel <- transform_sample_counts(physeq_gen, function(x) x / sum(x))
+melted_gen <- psmelt(physeq_rel)
+
+# Get top 10 genera by abundance
+top_genera <- names(sort(tapply(melted_gen$Abundance, melted_gen$Genus, sum), decreasing = TRUE))[1:10]
+
+# 2. Create Manual Function Map (Based on Literature)
+# Note: This is a simplified mapping for demonstration. 
+# In a full paper, you would cite specific references for each.
+func_map <- data.frame(
+  Genus = c("Cetobacterium", "Bacteroides", "Morganella", "Proteus", "Clostridium", "Aeromonas", "Plesiomonas", "Enterococcus"),
+  Function = c(
+    "Vitamin B12 Production / Protein Fermentation", # Cetobacterium
+    "Complex Carbohydrate Fermentation / SCFA Production", # Bacteroides
+    "Histamine Production / Opportunistic Pathogen", # Morganella
+    "Proteolytic Activity / Urea Hydrolysis", # Proteus
+    "Spore Forming / Butyrate Production", # Clostridium
+    "Chitin Degradation / Aquatic Opportunist", # Aeromonas
+    "Aquatic Adaptation / Potential Pathogen", # Plesiomonas
+    "Lactic Acid Production / Probiotic Potential" # Enterococcus
+  )
+)
+
+# 3. Map Functions to Data
+# Filter data to just top genera
+func_data <- melted_gen %>%
+  filter(Genus %in% func_map$Genus) %>%
+  left_join(func_map, by = "Genus") %>%
+  filter(!is.na(Function))
+
+# Explicitly order Samples by Age for the plot
+# Remove Fetus and Newborn as requested
+age_levels <- c("7+days", "15+days", "20+days")
+
+# Filter data to remove Fetus/Newborn
+func_data <- func_data %>%
+  filter(Age %in% age_levels)
+
+# Re-order metadata and factor levels
+metadata_ordered <- sample_data(physeq_rarefied) %>%
+  data.frame() %>%
+  filter(Age %in% age_levels) %>%
+  arrange(match(Age, age_levels))
+
+func_data$Sample <- factor(func_data$Sample, levels = rownames(metadata_ordered))
+func_data$Age <- factor(func_data$Age, levels = age_levels)
+
+# 4. Plot Functional Potential (Split by Treatment with Time Stamps)
+
+# Function to create plot for a specific treatment
+plot_treatment_func <- function(data, treatment_name, title_text) {
+  subset_data <- data %>% filter(SampleType == treatment_name)
+  
+  ggplot(subset_data, aes(x = Sample, y = Abundance, fill = Function)) +
+    geom_bar(stat = "identity") +
+    # Facet by Age to show explicit time stamps
+    facet_grid(~ Age, scales = "free_x", space = "free") +
+    scale_fill_brewer(palette = "Paired", name = "Predicted Function") +
+    labs(
+      title = title_text,
+      y = "Relative Abundance",
+      x = NULL
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      legend.position = "right",
+      strip.text = element_text(face = "bold", size = 12),
+      panel.border = element_rect(color = "grey", fill = NA, size = 0.5)
+    )
+}
+
+p_muck <- plot_treatment_func(func_data, "Muck", "Muck Treatment")
+p_sterile <- plot_treatment_func(func_data, "Sterile", "Sterile Treatment")
+
+# Arrange them vertically
+p_combined <- ggarrange(p_muck, p_sterile, ncol = 1, common.legend = TRUE, legend = "bottom")
+
+print(p_combined)
+
+# Table of Functions
+knitr::kable(func_map, caption = "Functional Mapping of Dominant Genera") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+**Interpretation:**
+- This plot shows the **potential** metabolic capacity of the gut.
+- For example, if *Cetobacterium* is high in one group, that group likely has higher **Vitamin B12** production capacity.
+- If *Bacteroides* is high, there is more **carbohydrate fermentation** potential (energy harvest).
+
+---
+
+# Summary of Advanced Findings
+
+1.  **Stochasticity:** The Beta-Dispersion analysis reveals whether the Sterile environment leads to more variable communities.
+2.  **Maturation:** The Trajectory analysis shows if environmental exposure accelerates gut development.
+3.  **Function:** The Functional Inference links the taxonomic names to biological roles, explaining *why* the changes matter for the host (e.g., vitamin synthesis vs. pathogen risk).
+
+```{r save-plots}
+ggsave("Adv_BetaDispersion.pdf", p_disp, width = 8, height = 6)
+ggsave("Adv_Trajectory.pdf", p_traj, width = 8, height = 6)
+ggsave("Adv_Functional.pdf", p_combined, width = 12, height = 8)
+```

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Determinants of the Nerodia rhombifer Microbiome</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Edgardo L. Rosado Ramos" />
+    <meta name="date" content="2025-12-03" />
+    <script src="libs/header-attrs/header-attrs.js"></script>
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+    <script src="libs/kePrint/kePrint.js"></script>
+    <link href="libs/lightable/lightable.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+.title[
+# Determinants of the <em>Nerodia rhombifer</em> Microbiome
+]
+.subtitle[
+## Disentangling Host Control from Environmental Stochasticity
+]
+.author[
+### Edgardo L. Rosado Ramos
+]
+.date[
+### 2025-12-03
+]
+
+---
+
+
+
+
+
+
+
+
+# Study Design &amp; Data Rigor
+
+.pull-left[
+### Experimental Setup
+*   **Subject:** *Nerodia rhombifer* (Diamondback Water Snake)
+*   **Factors:**
+    *   **Maternal Identity:** Vertical transmission / Genetic background.
+    *   **Environment:** "Muck" (Native) vs. "Sterile" (Clean).
+    *   **Ontogeny:** Fetus `\(\to\)` Newborn `\(\to\)` 7, 15, 20 Days.
+
+### Data Processing
+*   **Raw Sequencing:** High-depth 16S rRNA amplicon sequencing.
+*   **QC Filter:** Removed samples `\(&lt; 4,000\)` reads (n=2 dropped).
+*   **Final Dataset:** `\(n=30\)` samples.
+*   **Normalization:** Rarefied to 4688 reads/sample.
+]
+
+.pull-right[
+&lt;img src="Kohl_Scientific_Presentation_files/figure-html/sample-dist-1.png" width="720" /&gt;
+]
+
+---
+
+# Ecological Drivers: Beta Diversity
+
+.pull-left[
+### Principal Coordinates Analysis (PCoA)
+*   **Metric:** Bray-Curtis Dissimilarity (Community Structure).
+*   **Pattern:**
+    *   **Maternal Clustering:** Distinct clusters by clutch (Colors).
+    *   **Environmental Shift:** Separation between Muck/Sterile in later stages (Ellipses).
+
+### Statistical Validation (PERMANOVA)
+*   **Maternal Effect:** `\(R^2 = 0.25\)`, `\(p &lt; 0.001\)`
+*   **Environmental Effect:** `\(R^2 = 0.13\)`, `\(p &lt; 0.001\)`
+]
+
+.pull-right[
+&lt;img src="Kohl_Scientific_Presentation_files/figure-html/pcoa-1.png" width="720" /&gt;
+]
+
+---
+
+# Statistical Partitioning of Variance
+
+**Question:** What explains the variation in the microbiome?
+
+&lt;table class="table table-striped table-hover" style="font-size: 18px; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Factor &lt;/th&gt;
+   &lt;th style="text-align:center;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Variance Explained &lt;/th&gt;
+   &lt;th style="text-align:center;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; F-Statistic &lt;/th&gt;
+   &lt;th style="text-align:center;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; P-Value &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Mother &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 24.6% &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 4.47 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; &amp;lt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; SampleType &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 12.8% &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 7.01 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; &amp;lt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Age &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 8.4% &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 2.29 &lt;/td&gt;
+   &lt;td style="text-align:center;"&gt; 0.017 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+**Interpretation:**
+1.  **Maternal Identity** is the dominant driver (24.6%), suggesting strong priority effects or vertical transmission.
+2.  **Environment** is a significant secondary driver (12.8%), confirming that the "Muck" inocula successfully colonized the gut.
+
+---
+
+# Taxonomic Composition
+
+**Dominant Phyla:** *Proteobacteria*, *Firmicutes*, *Bacteroidetes*, *Fusobacteria*.
+
+&lt;img src="Kohl_Scientific_Presentation_files/figure-html/taxonomy-1.png" width="864" /&gt;
+
+---
+
+# Differential Abundance: Indicator Species
+
+**Which taxa specifically distinguish the "Muck" (Native) from "Sterile" environments?**
+
+&lt;table class="table table-striped" style="font-size: 16px; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Phylum &lt;/th&gt;
+   &lt;th style="text-align:left;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Genus &lt;/th&gt;
+   &lt;th style="text-align:left;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Association &lt;/th&gt;
+   &lt;th style="text-align:right;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; Stat &lt;/th&gt;
+   &lt;th style="text-align:right;font-weight: bold;color: white !important;background-color: rgba(51, 51, 51, 255) !important;"&gt; P_Value &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidales_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.883 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Aeromonas &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.943 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidales_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.787 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidales_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.837 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Rhodobacteraceae_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.775 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Rhodobacteraceae_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.775 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.001 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Fusobacteria &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Cetobacterium &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.832 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.002 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidales_unclassified &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Muck &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.775 &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 0.002 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+*Table shows top significant indicators (p &lt; 0.05).*
+
+---
+
+# The Core Microbiome
+
+**Definition:** Taxa present in `\(&gt;50\%\)` of samples within a treatment group.
+**Finding:** 52 Core Taxa identified, conserved across 5 Phyla.
+
+&lt;table class="table table-striped table-condensed" style="font-size: 14px; width: auto !important; margin-left: auto; margin-right: auto;"&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; Status &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; Phylum &lt;/th&gt;
+   &lt;th style="text-align:right;"&gt; Count &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; Genera &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Muck Only (Env) &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 8 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Bacteroidales_unclassified, Porphyromonadaceae_unclassified, Chitinophagaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Muck Only (Env) &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Firmicutes &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 4 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Robinsoniella, Ruminococcaceae_unclassified, Peptostreptococcaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Muck Only (Env) &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 4 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Aeromonas, Rhodobacteraceae_unclassified, Rhizobiales_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Muck Only (Env) &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Fusobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 2 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Cetobacterium &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Shared (Maternal) &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Firmicutes &lt;/td&gt;
+   &lt;td style="text-align:right;background-color: rgba(230, 243, 255, 255) !important;"&gt; 13 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; background-color: rgba(230, 243, 255, 255) !important;"&gt; Peptostreptococcaceae_unclassified, Clostridium_sensu_stricto, Firmicutes_unclassified, Clostridium_XlVa, Clostridiales_unclassified, Clostridium_XI, Clostridiaceae_1_unclassified, Peptococcus &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Shared (Maternal) &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;background-color: rgba(230, 243, 255, 255) !important;"&gt; 3 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; background-color: rgba(230, 243, 255, 255) !important;"&gt; Enterobacteriaceae_unclassified, Morganella, Providencia &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Shared (Maternal) &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:right;background-color: rgba(230, 243, 255, 255) !important;"&gt; 1 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; background-color: rgba(230, 243, 255, 255) !important;"&gt; Bacteroides &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Shared (Maternal) &lt;/td&gt;
+   &lt;td style="text-align:left;background-color: rgba(230, 243, 255, 255) !important;"&gt; Fusobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;background-color: rgba(230, 243, 255, 255) !important;"&gt; 1 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; background-color: rgba(230, 243, 255, 255) !important;"&gt; Cetobacterium &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Firmicutes &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 7 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Lachnospiraceae_unclassified, Clostridiales_unclassified, Clostridium_XI, Clostridiaceae_1_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Proteobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 5 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Alcaligenaceae_unclassified, Comamonas, Ochrobactrum, Bosea, Enterobacteriaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Bacteroidetes &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 3 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Chryseobacterium, Bacteroides &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; Sterile Only &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; Actinobacteria &lt;/td&gt;
+   &lt;td style="text-align:right;"&gt; 1 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 20em; "&gt; Micrococcaceae_unclassified &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+---
+
+# Mechanism 1: Host Selection vs. Neutral Drift
+
+**Hypothesis:** Is community assembly random (Neutral Theory) or deterministic (Host Selection)?
+
+.pull-left[
+**Method:** Sloan Neutral Model fit.
+*   **High `\(R^2\)`:** Stochastic assembly (Neutral).
+*   **Low/Negative `\(R^2\)`:** Strong selection.
+
+**Result:**
+*   **$R^2 &lt; 0$:** The neutral model completely fails.
+*   **Interpretation:** Abundance in the metacommunity does **not** predict prevalence in the host. The host actively selects specific taxa regardless of their environmental abundance.
+]
+
+.pull-right[
+&lt;img src="Kohl_Scientific_Presentation_files/figure-html/neutral-model-1.png" width="720" /&gt;
+]
+
+---
+
+# Mechanism 2: Functional Redundancy
+
+**Hypothesis:** Does the microbiome conserve **Function** over **Taxonomy**?
+
+.pull-left[
+**Method:** Compare Beta-Diversity at:
+1.  **OTU Level:** Fine-scale taxonomic turnover.
+2.  **Family Level:** Proxy for functional guild turnover.
+
+**Result:**
+*   **Significantly Lower Variation** at the Family level.
+*   **Interpretation:** Individual species may vary (stochastic colonization), but the functional roles (Families) are strictly conserved by the host.
+]
+
+.pull-right[
+&lt;img src="Kohl_Scientific_Presentation_files/figure-html/func-redundancy-1.png" width="720" /&gt;
+]
+
+---
+
+# Conclusions
+
+### 1. Host Control is Paramount
+*   **Maternal Identity** explains ~25% of variation.
+*   **Neutral Model Rejection** confirms deterministic selection, not random drift.
+*   **Functional Redundancy** suggests the host selects for metabolic guilds, not specific species.
+
+### 2. Environmental Modulation is Significant but Secondary
+*   **Environmental Effect** explains ~13% of variation (`\(p &lt; 0.001\)`).
+*   **Recruitment:** The environment successfully introduces "Muck-specific" core taxa (e.g., specific *Bacteroidetes* and *Proteobacteria*).
+
+### 3. Implications
+The *Nerodia rhombifer* microbiome is a **highly regulated system**. While environmental microbes can colonize, they do so within a strict ecological framework defined by the host's biology and maternal inheritance.
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+  "highlightStyle": "github",
+  "highlightLines": true,
+  "countIncrementalSlides": false,
+  "ratio": "16:9"
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+// add `data-at-shortcutkeys` attribute to <body> to resolve conflicts with JAWS
+// screen reader (see PR #262)
+(function(d) {
+  let res = {};
+  d.querySelectorAll('.remark-help-content table tr').forEach(tr => {
+    const t = tr.querySelector('td:nth-child(2)').innerText;
+    tr.querySelectorAll('td:first-child .key').forEach(key => {
+      const k = key.innerText;
+      if (/^[a-z]$/.test(k)) res[k] = t;  // must be a single letter (key)
+    });
+  });
+  d.body.setAttribute('data-at-shortcutkeys', JSON.stringify(res));
+})(document);
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
