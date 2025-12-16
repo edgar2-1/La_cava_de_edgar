@@ -26,6 +26,9 @@ editor_options:
 
 [Assignment 3](Assignment/Assignment3.html)
 
+[Assignment 4](Assignment/Assignment4.html)
+
+[Assignment 5](Assignment/Assignment5.html)
 
 [Practice cereal](Assignment/practiceCereal.html)
 

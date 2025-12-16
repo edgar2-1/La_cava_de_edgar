@@ -1,0 +1,151 @@
+---
+title: "Assignment5"
+author: "Edgardo L. Rosado Ramos"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+General instructions / Instrucciones generales:
+Make sure that all your R code is visible in your submitted document. I need to see the code for all ggplots you create. / Asegúrense de que todo el código en R sea visible en el documento que entreguen. Necesito poder ver el código de todos los ggplots que hagan.
+
+We will be using data from the article: Curtis et al., 2012, Genomic and Transcriptomic Architecture of Breast Tumor. / Estaremos usando datos del artículo: Curtis et al., 2012, Genomic and Transcriptomic Architecture of Breast Tumor.
+
+I am giving you the initial code, the basics to start building a ggplot of Tumor Size vs Type of Breast Surgery. / Les estoy dando el inicial, lo básico para construir un ggplot de Tumor Size vs Type of Breast Surgery.
+
+Be sure to follow R syntax carefully and include all plots requested in the assignment. / Sigan cuidadosamente la sintaxis de R e incluyan todos los gráficos solicitados en la asignación.
+
+Load libraries
+```{r}
+library(readr)
+library(ggplot2)
+library(janitor)
+```
+
+
+Load data
+metabric <- read.csv("brca_metabric_clinical_data.csv") %>%
+  clean_names()
+head(metabric[, 1:5]) 
+##        study_id patient_id sample_id age_at_diagnosis type_of_breast_surgery
+## 1 brca_metabric    MB-0000   MB-0000            75.65             MASTECTOMY
+## 2 brca_metabric    MB-0002   MB-0002            43.19      BREAST CONSERVING
+## 3 brca_metabric    MB-0005   MB-0005            48.87             MASTECTOMY
+## 4 brca_metabric    MB-0006   MB-0006            47.68             MASTECTOMY
+## 5 brca_metabric    MB-0008   MB-0008            76.97             MASTECTOMY
+## 6 brca_metabric    MB-0010   MB-0010            78.77             MASTECTOMY
+
+
+
+Basic ggplot
+ggplot(metabric, aes(x = type_of_breast_surgery,
+                     y = tumor_size)) +
+  geom_boxplot()
+## Warning: Removed 149 rows containing non-finite outside the scale range
+## (`stat_boxplot()`).
+
+
+
+Question
+English
+
+I have shared with you an initial plot. As you can see, this plot is not yet publication-ready.
+Your task:
+Choose at least three modifications you think will improve the plot and make it more flexible and creative.
+You can select from the following examples or come up with your own ideas:
+Change the background/theme of the plot.
+Modify the X and Y axis titles.
+Use facet_wrap() or facet_grid() to separate categories.
+Change the color of the plot (using fill or color).
+Adjust labels, scales, legends, or text sizes.
+Other creative enhancements you think improve the visualization.
+Deliverable: Implement your chosen modifications in at least three different ways, and briefly explain why you made each choice.
+Español
+
+Les he compartido un gráfico inicial que, como ven, no está listo para publicación.
+
+Su tarea:
+
+Elijan al menos tres modificaciones que ustedes crean que mejorarán el gráfico y lo harán más flexible y creativo.
+
+Pueden escoger entre los siguientes ejemplos o proponer sus propias ideas:
+Cambiar el fondo/tema del gráfico.
+Modificar los títulos de los ejes X y Y.
+Usar facet_wrap() o facet_grid() para separar categorías.
+Cambiar el color del gráfico (usando fill o color).
+justar etiquetas, escalas, leyendas o tamaños de texto.
+Otras mejoras creativas que consideren útiles.
+Entrega: Implementen sus modificaciones en al menos tres formas diferentes, y expliquen brevemente por qué hicieron cada cambio.
+
+
+
+
+Bonus: Pregunta opcional / Optional Bonus
+English:
+
+For students who had issues with Question 2 on Tuesday’s quiz, this is an optional bonus.
+You must make 5 modifications to the initial plot provided.
+You can choose any type of modification, e.g., change the theme, axis titles, colors, use facet_wrap, adjust labels, change scales, etc.
+Completing this bonus can replace Question 2 of the quiz if done correctly.
+Español:
+
+Para los estudiantes que tuvieron algún inconveniente con la Pregunta 2 del quiz del martes, pueden optar por este bonus.
+Deben hacer 5 modificaciones al gráfico inicial que se les proporcionó.
+Pueden elegir cualquier tipo de modificación, por ejemplo: cambiar el tema, los títulos de los ejes, los colores, usar facet_wrap, ajustar etiquetas, cambiar escalas, etc.
+Este bonus puede sustituir la Pregunta 2 del quiz si lo completan correctamente.
+
+Reference
+
+Curtis C, Shah SP, Chin SF, Turashvili G, Rueda OM, Dunning MJ, Speed D, Lynch AG, Samarajiwa S, Yuan Y, Gräf S, Ha G, Haffari G, Bashashati A, Russell R, McKinney S; METABRIC Group; Langerød A, Green A, Provenzano E, Wishart G, Pinder S, Watson P, Markowetz F, Murphy L, Ellis I, Purushotham A, Børresen-Dale AL, Brenton JD, Tavaré S, Caldas C, Aparicio S. The genomic and transcriptomic architecture of 2,000 breast tumours reveals novel subgroups. Nature. 2012 Apr 18;486(7403):346-52. doi: 10.1038/nature10983. PMID: 22522925; PMCID: PMC3440846.
+
+```{r}
+metabric <- read.csv("brca_metabric_clinical_data.csv") %>%
+  clean_names()
+```
+
+
+
+```{r}
+# Improved Plot 1: Changed theme and axis titles
+ggplot(metabric, aes(x = type_of_breast_surgery,
+                     y = tumor_size)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue") +
+  theme_minimal() +
+  labs(title = "Tumor Size by Type of Breast Surgery",
+       x = "Type of Breast Surgery",
+       y = "Tumor Size (mm)")
+
+```
+
+```{r}
+# Improved Plot 2: Added facet_wrap by age group
+metabric$age_group <- cut(metabric$age_at_diagnosis,
+                          breaks = c(0, 40, 60, 80, 100),
+                          labels = c("<40", "40-60", "60-80", "80
++"))
+ggplot(metabric, aes(x = type_of_breast_surgery,
+                     y = tumor_size)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen") +
+  facet_wrap(~ age_group) +
+  theme_light() +
+  labs(title = "Tumor Size by Type of Breast Surgery and Age Group",
+       x = "Type of Breast Surgery",
+       y = "Tumor Size (mm)")
+# Explanation: I added facet_wrap to separate the data by age groups, which allows for better comparison across different age categories.
+```
+
+
+```{r}
+# Improved Plot 3: Changed color scheme and adjusted text size
+ggplot(metabric, aes(x = type_of_breast_surgery,
+                     y = tumor_size)) +
+  geom_boxplot(aes(fill = type_of_breast_surgery)) +
+  scale_fill_brewer(palette = "Set3") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        plot.title = element_text(size = 16, face = "bold")) +
+  labs(title = "Tumor Size by Type of Breast Surgery",
+       x = "Type of Breast Surgery",
+       y = "Tumor Size (mm)")
+# Explanation: I used a color palette to differentiate the boxplots better and adjusted the text size for improved readability.
+```
